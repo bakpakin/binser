@@ -11,7 +11,6 @@ env:
 before_install:
   - if [ $LUA = "luajit" ]; then
       sudo add-apt-repository ppa:mwild1/ppa -y && sudo apt-get update -y;
-      # busted complains without vanilla lua on the path
       sudo apt-get install lua5.1;
       sudo apt-get install liblua5.1-dev;
     fi
