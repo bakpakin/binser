@@ -29,6 +29,7 @@ local unpack = unpack or table.unpack
 local select = select
 local pairs = pairs
 local floor = math.floor
+local assert = assert
 
 local NESTED_END_TOKEN = {}
 
@@ -240,6 +241,8 @@ local function default_deserialize(metatable)
 end
 
 local function defualt_serialize(x)
+    assert(type(x) == "table",
+        "Default serialization for custom types only works for tables.")
     local args = {}
     local len = 0
     for k, v in pairs(x) do
@@ -256,7 +259,7 @@ local function register(metatable, name, serialize, deserialize)
     if not serialize then
         if not deserialize then
             serialize = defualt_serialize
-            deserialize = default_deserialize
+            deserialize = default_deserialize(metatable)
         else
             serialize = metatable
         end
