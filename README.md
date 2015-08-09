@@ -58,6 +58,10 @@ a pair of functions that construct and destruct and instance of the type.
 `serialize` and `deserialize` can also be specified in `metatable._serialize`
 and `metatable._deserialize` respectively.
 
+If `serialize` and `deserialize` are omitted, then default table serializers are
+used, which work very well for most tables. If your type describes userdata,
+however, `serialize` and `deserialize` must be provided. 
+
 ```lua
 local class = binser.registerClass(class[, name])
 ```
