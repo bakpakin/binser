@@ -290,9 +290,9 @@ end
 local function registerClass(class, name)
     name = name or class.name
     if class.__instanceDict then
-        regsiter(class.__instanceDict, name)
+        register(class.__instanceDict, name)
     else -- assume 30log or similar library
-        regsiter(class, name)
+        register(class, name)
     end
     return class
 end
