@@ -7,8 +7,8 @@ limitations, and quirks. binser is yet another robust, pure lua serializer that
 specializes in serializing lua data with lots of userdata and custom classes
 and types. binser is a binary serializer and does not serialize data into
 human readable representation or use the lua parser to read expressions. This
-makes it safer than many other serializers and fast, especially on Luajit.
-binser also handles cycles, self-references, and metatables.
+makes it safe and moderately fast, especially on Luajit. binser also handles
+cycles, self-references, and metatables.
 
 ## How to Use
 
@@ -16,10 +16,12 @@ binser also handles cycles, self-references, and metatables.
 ```lua
 local binser = require "binser"
 
-print(binser.serialize(45, {4, 8, 12, 16}, "Hello, World!"))
+local mydata = binser.serialize(45, {4, 8, 12, 16}, "Hello, World!")
+
+print(mydata)
 -- N45|TZ|N4|N8|N12|N16|||SHello, World!|
 
-print(binser.deserialize(binser.serialize(45, {4, 8, 12, 16}, "Hello, World!")))
+print(binser.deserialize(mydata))
 -- 45	table: 0x7fa60054bdb0	Hello, World!
 ```
 
@@ -60,7 +62,7 @@ and `metatable._deserialize` respectively.
 
 If `serialize` and `deserialize` are omitted, then default table serializers are
 used, which work very well for most tables. If your type describes userdata,
-however, `serialize` and `deserialize` must be provided. 
+however, `serialize` and `deserialize` must be provided.
 
 ```lua
 local class = binser.registerClass(class[, name])
@@ -84,9 +86,7 @@ binser uses [busted](http://olivinelabs.com/busted/) for testing. Install and
 run `busted` from the command line to test.
 
 ## Notes
-Serialized strings are not necessarily safe to write to files in text mode. If a
-string is unsafe to write to a file (strange characters), the serialized string
-will also be unsafe. Its recommended to write to files in binary mode. Also,
+Serialized strings can contain unprintable and null characters. Also,
 serialized data can be appended to other serialized data. (Cool :))
 
 ## Bugs
