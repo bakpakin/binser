@@ -41,9 +41,7 @@ local T = ("T"):byte() -- table type
 local R = ("R"):byte() -- table reference type
 local C = ("C"):byte() -- constructor type
 
-local A = ("A"):byte()
 local SEP = ("|"):byte()
-local ESC = ("#"):byte()
 
 local mts = {}
 local ids = {}
@@ -119,7 +117,7 @@ end
 local function deserialize_value(str, index, visited)
     local t = str:byte(index)
     if t then
-        -- find next index - naive approach that ignores nested structures.
+        -- find index of next seperator
         local nindex = index
         local b
         repeat
@@ -127,6 +125,7 @@ local function deserialize_value(str, index, visited)
             b = str:byte(nindex)
         until (not b) or b == SEP
         nindex = nindex + 1
+
         local data = str:sub(index + 1, nindex - 2)
         if t == SEP then
             return NESTED_END_TOKEN, index + 1
