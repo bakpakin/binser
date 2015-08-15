@@ -1,3 +1,5 @@
+-- binser.lua
+
 --[[
 Copyright (c) 2015 Calvin Rose
 
@@ -19,29 +21,38 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
-local getmetatable = getmetatable
-local setmetatable = setmetatable
-local concat = table.concat
-local type = type
-local tostring = tostring
-local tonumber = tonumber
-local unpack = unpack or table.unpack
+local assert = assert
 local select = select
 local pairs = pairs
+local getmetatable = getmetatable
+local setmetatable = setmetatable
+local tonumber = tonumber
+local type = type
+local concat = table.concat
+local char = string.char
+local byte = string.byte
+local format = string.format
+local sub = string.sub
 local floor = math.floor
-local assert = assert
+local unpack = unpack or table.unpack
 
-local NESTED_END_TOKEN = {}
+local NIL = 202
+local FLOAT = 203
+local TRUE = 204
+local FALSE = 205
+local STRING = 206
+local TABLE = 207
+local REFERENCE = 208
+local CONSTRUCTOR = 209
 
-local Z = ("Z"):byte() -- nil type
-local N = ("N"):byte() -- number type
-local B = ("B"):byte() -- boolean type
-local S = ("S"):byte() -- string type
-local T = ("T"):byte() -- table type
-local R = ("R"):byte() -- table reference type
-local C = ("C"):byte() -- constructor type
-
-local SEP = ("|"):byte()
+local NIL_CHAR = char(NIL)
+local FLOAT_CHAR = char(FLOAT)
+local TRUE_CHAR = char(TRUE)
+local FALSE_CHAR = char(FALSE)
+local STRING_CHAR = char(STRING)
+local TABLE_CHAR = char(TABLE)
+local REFERENCE_CHAR = char(REFERENCE)
+local CONSTRUCTOR_CHAR = char(CONSTRUCTOR)
 
 local mts = {}
 local ids = {}
@@ -49,168 +60,157 @@ local serializers = {}
 local deserializers = {}
 
 local function pack(...)
-    return select("#", ...), {...}
-end
-
-local function escape_string(str)
-    return str:gsub("#", "#1"):gsub("|", "#2")
-end
-
-local function unescape_string(str)
-    return str:gsub("#2", "|"):gsub("#1", "#")
+    return {...}, select("#", ...)
 end
 
 local function is_array_index(x, len)
-    return type(x) == "number" and x == floor(x) and x > 0 and x <= len
+    return type(x) == "number" and x > 0 and x <= len and x == floor(x)
 end
 
-local function serialize_value(x, next, visited)
+local function number_to_str(x)
+    if x <= 100 and x >= -100 and floor(x) == x then -- int from -100 to 100
+        return char(x + 101)
+    else -- large ints, floating point numbers
+        return format("\203%.17g\203", x)
+    end
+end
+
+local nonrs = {
+    ["inf"] = 1/0,
+    ["-inf"] = -1/0,
+    ["nan"] = 0/0
+}
+local function number_from_str(str, index)
+    local b = byte(str, index)
+    if b > 0 and b < NIL then
+        return b - 101, index + 1
+    end
+    local endindex = index
+    repeat
+        endindex = endindex + 1
+        b = byte(str, endindex)
+    until b == 203 or not b
+    local substr = sub(str, index + 1, endindex - 1)
+    return tonumber(substr) or nonrs[substr], endindex + 1
+end
+
+local function serialize_value(x, next, visited, accum)
+    local alen = #accum
     local t = type(x)
     if t == "nil" then
-        return "Z|"
+        accum[alen + 1] = NIL_CHAR
     elseif t == "number" then
-        return "N" .. tostring(x) .. "|"
+        accum[alen + 1] = number_to_str(x)
     elseif t == "boolean" then
-        return "B" .. (x and "t|" or "f|")
+        accum[alen + 1] = x and TRUE_CHAR or FALSE_CHAR
     elseif t == "string" then
-        return "S" .. escape_string(x) .."|"
+        accum[alen + 1] = STRING_CHAR
+        accum[alen + 2] = number_to_str(#x)
+        accum[alen + 3] = x
     elseif visited[x] then
-        return "R" .. tostring(visited[x]) .. "|"
+        accum[alen + 1] = REFERENCE_CHAR
+        accum[alen + 2] = number_to_str(visited[x])
     else
-        local mt = getmetatable(x)
         visited[x] = next[1]
         next[1] = next[1] + 1
-        if ids[mt] then
-            local id = ids[mt]
-            local tab = {escape_string(id) .. "|"}
-            local len, args = pack(serializers[id](x))
+        local mt = getmetatable(x)
+        local id = mt and ids[mt]
+        if id then -- Custom type
+            accum[alen + 1] = CONSTRUCTOR_CHAR
+            serialize_value(id, next, visited, accum)
+            alen = #accum
+            local args, len = pack(serializers[id](x))
+            accum[alen + 1] = number_to_str(len)
             for i = 1, len do
-                tab[i + 1] = serialize_value(args[i], next, visited)
+                serialize_value(args[i], next, visited, accum)
             end
-            return "C" .. concat(tab) .. "|"
         elseif t == "table" then
-            local tab = {}
-            tab[#tab + 1] = serialize_value(mt, next, visited)
+            accum[alen + 1] = TABLE_CHAR
+            accum[alen + 2] = false -- temporary value
             local array_value = true
             local array_len = 0
-            while array_value do
-                array_len = array_len + 1
+            while array_value ~= nil do
                 array_value = x[array_len]
-                if array_value then
-                    tab[#tab + 1] = serialize_value(array_value, next, visited)
+                if array_value ~= nil then
+                    serialize_value(array_value, next, visited, accum)
                 end
             end
-            tab[#tab + 1] = "|"
+            accum[alen + 2] = number_to_str(array_len - 1)
+            local non_array_keys = #accum + 1
+            accum[non_array_keys] = false -- temporary value
+            local key_count = 0
             for k, v in pairs(x) do
                 if not is_array_index(k, array_len) then
-                    tab[#tab + 1] = serialize_value(k, next, visited)
-                    tab[#tab + 1] = serialize_value(v, next, visited)
+                    key_count = key_count + 1
+                    serialize_value(k, next, visited, accum)
+                    serialize_value(v, next, visited, accum)
                 end
             end
-            return "T" .. concat(tab) .. "|"
+            accum[non_array_keys] = number_to_str(key_count)
         else
-            error("Cannot serialize type " .. t .. ".")
+            error(("Cannot serialize type %q."):format(t))
         end
     end
 end
 
 local function deserialize_value(str, index, visited)
-    local t = str:byte(index)
-    if t then
-        -- find index of next seperator
-        local nindex = index
-        local b
-        repeat
-            nindex = nindex + 1
-            b = str:byte(nindex)
-        until (not b) or b == SEP
-        nindex = nindex + 1
-
-        local data = str:sub(index + 1, nindex - 2)
-        if t == SEP then
-            return NESTED_END_TOKEN, index + 1
-        elseif t == Z then
-            return nil, nindex
-        elseif t == N then
-            local ret
-            if data == "nan" then
-                ret = 0/0
-            elseif data == "inf" then
-                ret = 1/0
-            elseif data == "-inf" then
-                ret = -1/0
-            else
-                ret = tonumber(data)
-            end
-            return ret, nindex
-        elseif t == B then
-            return data == "t", nindex
-        elseif t == S then
-            return unescape_string(data), nindex
-        elseif t == T then
-            local ret = {}
-            visited[#visited + 1] = ret
-            local k, v
-            nindex = index + 1
-            local mt
-            mt, nindex = deserialize_value(str, nindex, visited)
-            setmetatable(ret, mt)
-            local end_array_part = false
-            local array_len = 0
-            while not end_array_part do
-                v, nindex = deserialize_value(str, nindex, visited)
-                if v == NESTED_END_TOKEN then
-                    end_array_part = true
-                else
-                    array_len = array_len + 1
-                    ret[array_len] = v
-                end
-            end
-            while true do
-                k, nindex = deserialize_value(str, nindex, visited)
-                if k == NESTED_END_TOKEN then
-                    return ret, nindex
-                end
-                v, nindex = deserialize_value(str, nindex, visited)
-                ret[k] = v
-            end
-        elseif t == C then
-            local visited_index = #visited + 1
-            visited[visited_index] = {}
-            local id = unescape_string(data)
-            local mt = mts[id]
-            local ctor = deserializers[id]
-            local args = {}
-            local arg
-            local len = 0
-            while true do
-                arg, nindex = deserialize_value(str, nindex, visited)
-                if arg == NESTED_END_TOKEN then
-                    local ret = ctor(unpack(args, 1, len))
-                    visited[visited_index] = ret
-                    return ret, nindex
-                end
-                len = len + 1
-                args[len] = arg
-            end
-        elseif t == R then
-            return visited[tonumber(data)], nindex
-        else
-            error("Cannot deserialize type " .. t .. ".")
+    local t = byte(str, index)
+    if not t then return end
+    if t > 0 and t < NIL then
+        return t - 101, index + 1
+    elseif t == NIL then
+        return nil, index + 1
+    elseif t == TRUE then
+        return true, index + 1
+    elseif t == FALSE then
+        return false, index + 1
+    elseif t == STRING then
+        local length, dataindex = deserialize_value(str, index + 1, visited)
+        assert(type(length) == "number", ("Could not parse string at index %i."):format(index))
+        local nextindex = dataindex + length
+        return sub(str, dataindex, nextindex - 1), nextindex
+    elseif t == FLOAT then
+        return number_from_str(str, index)
+    elseif t == TABLE then
+        local count, nextindex = number_from_str(str, index + 1)
+        local ret = {}
+        visited[#visited + 1] = ret
+        for i = 1, count do
+            ret[i], nextindex = deserialize_value(str, nextindex, visited)
         end
-    else -- no values left
-        return
+        count, nextindex = number_from_str(str, nextindex)
+        for i = 1, count do
+            local k, v
+            k, nextindex = deserialize_value(str, nextindex, visited)
+            v, nextindex = deserialize_value(str, nextindex, visited)
+            ret[k] = v
+        end
+        return ret, nextindex
+    elseif t == CONSTRUCTOR then
+        local count
+        local name, nextindex = deserialize_value(str, index + 1, visited)
+        count, nextindex = number_from_str(str, nextindex)
+        local args = {}
+        for i = 1, count do
+            args[i], nextindex = deserialize_value(str, nextindex, visited)
+        end
+        local ret = deserializers[name](unpack(args))
+        visited[#visited + 1] = ret
+        return ret, nextindex
+    elseif t == REFERENCE then
+        local ref, nextindex = number_from_str(str, index + 1)
+        return visited[ref], nextindex
     end
 end
 
 local function serialize(...)
-    local vals = {}
     local visited = {}
     local next = {1}
+    local accum = {}
     for i = 1, select("#", ...) do
-        vals[i] = serialize_value(select(i, ...), next, visited)
+        serialize_value(select(i, ...), next, visited, accum)
     end
-    return concat(vals)
+    return concat(accum)
 end
 
 local function deserialize(str)
@@ -239,7 +239,7 @@ local function default_deserialize(metatable)
     end
 end
 
-local function defualt_serialize(x)
+local function default_serialize(x)
     assert(type(x) == "table",
         "Default serialization for custom types only works for tables.")
     local args = {}
@@ -257,7 +257,7 @@ local function register(metatable, name, serialize, deserialize)
     deserialize = deserialize or metatable._deserialize
     if not serialize then
         if not deserialize then
-            serialize = defualt_serialize
+            serialize = default_serialize
             deserialize = default_deserialize(metatable)
         else
             serialize = metatable
@@ -288,7 +288,7 @@ end
 
 local function registerClass(class, name)
     name = name or class.name
-    if class.__instanceDict then
+    if class.__instanceDict then -- middleclass
         register(class.__instanceDict, name)
     else -- assume 30log or similar library
         register(class, name)
