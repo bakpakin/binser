@@ -46,7 +46,7 @@ local REFERENCE = 208
 local CONSTRUCTOR = 209
 
 local NIL_CHAR = char(NIL)
-local FLOAT_CHAR = char(FLOAT)
+--local FLOAT_CHAR = char(FLOAT) -- not needed
 local TRUE_CHAR = char(TRUE)
 local FALSE_CHAR = char(FALSE)
 local STRING_CHAR = char(STRING)
