@@ -78,6 +78,12 @@ makes it impossible to do things like custom serialization and
 deserialization. binser was originally written as a way to save game levels
 with images and other native resources, but is extremely general.
 
+## LuaRocks
+binser is available as a rock on [LuaRocks](https://luarocks.org/). Install via:
+```
+luarocks install binser
+```
+
 ## Testing
 binser uses [busted](http://olivinelabs.com/busted/) for testing. Install and
 run `busted` from the command line to test.
