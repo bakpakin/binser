@@ -18,9 +18,6 @@ local binser = require "binser"
 
 local mydata = binser.serialize(45, {4, 8, 12, 16}, "Hello, World!")
 
-print(mydata)
--- N45|TZ|N4|N8|N12|N16|||SHello, World!|
-
 print(binser.deserialize(mydata))
 -- 45	table: 0x7fa60054bdb0	Hello, World!
 ```
