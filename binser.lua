@@ -22,6 +22,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
 local assert = assert
+local error = error
 local select = select
 local pairs = pairs
 local getmetatable = getmetatable
@@ -36,23 +37,14 @@ local sub = string.sub
 local floor = math.floor
 local unpack = unpack or table.unpack
 
-local NIL = 202
-local FLOAT = 203
-local TRUE = 204
-local FALSE = 205
-local STRING = 206
-local TABLE = 207
-local REFERENCE = 208
-local CONSTRUCTOR = 209
-
-local NIL_CHAR = char(NIL)
---local FLOAT_CHAR = char(FLOAT) -- not needed
-local TRUE_CHAR = char(TRUE)
-local FALSE_CHAR = char(FALSE)
-local STRING_CHAR = char(STRING)
-local TABLE_CHAR = char(TABLE)
-local REFERENCE_CHAR = char(REFERENCE)
-local CONSTRUCTOR_CHAR = char(CONSTRUCTOR)
+-- NIL = 202
+-- FLOAT = 203
+-- TRUE = 204
+-- FALSE = 205
+-- STRING = 206
+-- TABLE = 207
+-- REFERENCE = 208
+-- CONSTRUCTOR = 209
 
 local mts = {}
 local ids = {}
@@ -63,8 +55,8 @@ local function pack(...)
     return {...}, select("#", ...)
 end
 
-local function is_array_index(x, len)
-    return type(x) == "number" and x > 0 and x <= len and x == floor(x)
+local function not_array_index(x, len)
+    return type(x) ~= "number" or x < 1 or x > len or x ~= floor(x)
 end
 
 local function number_to_str(x)
@@ -82,7 +74,7 @@ local nonrs = {
 }
 local function number_from_str(str, index)
     local b = byte(str, index)
-    if b > 0 and b < NIL then
+    if b > 0 and b < 202 then
         return b - 101, index + 1
     end
     local endindex = index
@@ -94,84 +86,111 @@ local function number_from_str(str, index)
     return tonumber(substr) or nonrs[substr], endindex + 1
 end
 
-local function serialize_value(x, next, visited, accum)
+local types = {}
+
+types["nil"] = function(x, visited, accum)
+    accum[#accum + 1] = "\202"
+end
+
+function types.number(x, visited, accum)
+    accum[#accum + 1] = number_to_str(x)
+end
+
+function types.boolean(x, visited, accum)
+    accum[#accum + 1] = x and "\204" or "\205"
+end
+
+function types.string(x, visited, accum)
     local alen = #accum
-    local t = type(x)
-    if t == "nil" then
-        accum[alen + 1] = NIL_CHAR
-    elseif t == "number" then
-        accum[alen + 1] = number_to_str(x)
-    elseif t == "boolean" then
-        accum[alen + 1] = x and TRUE_CHAR or FALSE_CHAR
-    elseif t == "string" then
-        accum[alen + 1] = STRING_CHAR
-        accum[alen + 2] = number_to_str(#x)
-        accum[alen + 3] = x
-    elseif visited[x] then
-        accum[alen + 1] = REFERENCE_CHAR
-        accum[alen + 2] = number_to_str(visited[x])
-    else
-        visited[x] = next[1]
-        next[1] = next[1] + 1
-        local mt = getmetatable(x)
-        local id = mt and ids[mt]
-        if id then -- Custom type
-            accum[alen + 1] = CONSTRUCTOR_CHAR
-            serialize_value(id, next, visited, accum)
-            alen = #accum
-            local args, len = pack(serializers[id](x))
-            accum[alen + 1] = number_to_str(len)
-            for i = 1, len do
-                serialize_value(args[i], next, visited, accum)
-            end
-        elseif t == "table" then
-            accum[alen + 1] = TABLE_CHAR
-            accum[alen + 2] = false -- temporary value
-            local array_value = true
-            local array_len = 0
-            while array_value ~= nil do
-                array_value = x[array_len]
-                if array_value ~= nil then
-                    serialize_value(array_value, next, visited, accum)
-                end
-            end
-            accum[alen + 2] = number_to_str(array_len - 1)
-            local non_array_keys = #accum + 1
-            accum[non_array_keys] = false -- temporary value
-            local key_count = 0
-            for k, v in pairs(x) do
-                if not is_array_index(k, array_len) then
-                    key_count = key_count + 1
-                    serialize_value(k, next, visited, accum)
-                    serialize_value(v, next, visited, accum)
-                end
-            end
-            accum[non_array_keys] = number_to_str(key_count)
-        else
-            error(("Cannot serialize type %q."):format(t))
+    accum[alen + 1] = "\206"
+    accum[alen + 2] = number_to_str(#x)
+    accum[alen + 3] = x
+end
+
+local function check_custom_type(x, visited, accum, alen)
+    local mt = getmetatable(x)
+    local id = mt and ids[mt]
+    if id then
+        accum[alen + 1] = "\209"
+        types[type(id)](id, visited, accum)
+        alen = #accum
+        local args, len = pack(serializers[id](x))
+        accum[alen + 1] = number_to_str(len)
+        for i = 1, len do
+            local arg = args[i]
+            types[type(arg)](arg, visited, accum)
         end
+        return true
     end
 end
+
+function types.userdata(x, visited, accum)
+    local alen = #accum
+    if visited[x] then
+        accum[alen + 1] = "\208"
+        accum[alen + 2] = number_to_str(visited[x])
+    else
+        visited[x] = visited.next
+        visited.next =  visited.next + 1
+        if check_custom_type(x, visited, accum, alen) then return end
+        error("Cannot serialize this userdata.")
+    end
+end
+
+function types.table(x, visited, accum)
+    local alen = #accum
+    if visited[x] then
+        accum[alen + 1] = "\208"
+        accum[alen + 2] = number_to_str(visited[x])
+    else
+        visited[x] = visited.next
+        visited.next =  visited.next + 1
+        if check_custom_type(x, visited, accum, alen) then return end
+        accum[alen + 1] = "\207"
+        accum[alen + 2] = false -- temporary value
+        local array_len, array_value = 0
+        while true do
+            array_value = x[array_len + 1]
+            if array_value == nil then break end
+            types[type(array_value)](array_value, visited, accum)
+            array_len = array_len + 1
+        end
+        accum[alen + 2] = number_to_str(array_len)
+        local non_array_keys = #accum + 1
+        accum[non_array_keys] = false -- temporary value
+        local key_count = 0
+        for k, v in pairs(x) do
+            if not_array_index(k, array_len) then
+                key_count = key_count + 1
+                types[type(k)](k, visited, accum)
+                types[type(v)](v, visited, accum)
+            end
+        end
+        accum[non_array_keys] = number_to_str(key_count)
+    end
+end
+
+types.thread = function() error("Cannot serialize threads.") end
+types["function"] = function() error("Cannot serialize functions") end
 
 local function deserialize_value(str, index, visited)
     local t = byte(str, index)
     if not t then return end
-    if t > 0 and t < NIL then
+    if t > 0 and t < 202 then
         return t - 101, index + 1
-    elseif t == NIL then
+    elseif t == 202 then
         return nil, index + 1
-    elseif t == TRUE then
+    elseif t == 203 then
+        return number_from_str(str, index)
+    elseif t == 204 then
         return true, index + 1
-    elseif t == FALSE then
+    elseif t == 205 then
         return false, index + 1
-    elseif t == STRING then
+    elseif t == 206 then
         local length, dataindex = deserialize_value(str, index + 1, visited)
-        assert(type(length) == "number", ("Could not parse string at index %i."):format(index))
         local nextindex = dataindex + length
         return sub(str, dataindex, nextindex - 1), nextindex
-    elseif t == FLOAT then
-        return number_from_str(str, index)
-    elseif t == TABLE then
+    elseif t == 207 then
         local count, nextindex = number_from_str(str, index + 1)
         local ret = {}
         visited[#visited + 1] = ret
@@ -186,7 +205,7 @@ local function deserialize_value(str, index, visited)
             ret[k] = v
         end
         return ret, nextindex
-    elseif t == CONSTRUCTOR then
+    elseif t == 209 then
         local count
         local name, nextindex = deserialize_value(str, index + 1, visited)
         count, nextindex = number_from_str(str, nextindex)
@@ -197,18 +216,18 @@ local function deserialize_value(str, index, visited)
         local ret = deserializers[name](unpack(args))
         visited[#visited + 1] = ret
         return ret, nextindex
-    elseif t == REFERENCE then
+    elseif t == 208 then
         local ref, nextindex = number_from_str(str, index + 1)
         return visited[ref], nextindex
     end
 end
 
 local function serialize(...)
-    local visited = {}
-    local next = {1}
+    local visited = {next = 1}
     local accum = {}
     for i = 1, select("#", ...) do
-        serialize_value(select(i, ...), next, visited, accum)
+        local x = select(i, ...)
+        types[type(x)](x, visited, accum)
     end
     return concat(accum)
 end
