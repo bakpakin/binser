@@ -61,6 +61,9 @@ local function not_array_index(x, len)
     return type(x) ~= "number" or x < 1 or x > len or x ~= floor(x)
 end
 
+-- Copyright (C) 2012-2015 Francois Perrad.
+-- number serialization code modified from https://github.com/fperrad/lua-MessagePack
+-- Encode a number as a big-endian ieee-754 double (or a single byte)
 local function number_to_str(n)
     if n <= 100 and n >= -100 and floor(n) == n then -- int from -100 to 100
         return char(n + 101)
@@ -70,34 +73,36 @@ local function number_to_str(n)
         sign = 0x80
         n = -n
     end
-    local mant, expo = frexp(n)
-    if mant ~= mant then
+    local m, e = frexp(n) -- mantissa, exponent
+    if m ~= m then
         return char(203, 0xFF, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
-    elseif mant == 1/0 then
+    elseif m == 1/0 then
         if sign == 0 then
             return char(203, 0x7F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
         else
             return char(203, 0xFF, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
         end
     end
-    expo = expo + 0x3FE
-    if expo < 1 then -- denormalized numbers
-        mant = mant * ldexp(0.5, 53 + expo)
-        expo = 0
+    e = e + 0x3FE
+    if e < 1 then -- denormalized numbers
+        m = m * ldexp(0.5, 53 + e)
+        e = 0
     else
-        mant = (mant * 2 - 1) * ldexp(0.5, 53)
+        m = (m * 2 - 1) * ldexp(0.5, 53)
     end
     return char(203,
-                sign + floor(expo / 0x10),
-                (expo % 0x10) * 0x10 + floor(mant / 0x1000000000000),
-                floor(mant / 0x10000000000) % 0x100,
-                floor(mant / 0x100000000) % 0x100,
-                floor(mant / 0x1000000) % 0x100,
-                floor(mant / 0x10000) % 0x100,
-                floor(mant / 0x100) % 0x100,
-                mant % 0x100)
+                sign + floor(e / 0x10),
+                (e % 0x10) * 0x10 + floor(m / 0x1000000000000),
+                floor(m / 0x10000000000) % 0x100,
+                floor(m / 0x100000000) % 0x100,
+                floor(m / 0x1000000) % 0x100,
+                floor(m / 0x10000) % 0x100,
+                floor(m / 0x100) % 0x100,
+                m % 0x100)
 end
 
+-- Copyright (C) 2012-2015 Francois Perrad.
+-- number serialization code also modified from https://github.com/fperrad/lua-MessagePack
 local function number_from_str(str, index)
     local b = byte(str, index)
     if b > 0 and b < 202 then
@@ -105,23 +110,23 @@ local function number_from_str(str, index)
     end
     local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
     local sign = b1 > 0x7F and -1 or 1
-    local expo = (b1 % 0x80) * 0x10 + floor(b2 / 0x10)
-    local mant = ((((((b2 % 0x10) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
+    local e = (b1 % 0x80) * 0x10 + floor(b2 / 0x10)
+    local m = ((((((b2 % 0x10) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
     local n
-    if expo == 0 then
-        if mant == 0 then
+    if e == 0 then
+        if m == 0 then
             n = sign * 0.0
         else
-            n = sign * ldexp(mant / ldexp(0.5, 53), -1022)
+            n = sign * ldexp(m / ldexp(0.5, 53), -1022)
         end
-    elseif expo == 0x7FF then
-        if mant == 0 then
+    elseif e == 0x7FF then
+        if m == 0 then
             n = sign * (1/0)
         else
             n = 0.0/0.0
         end
     else
-        n = sign * ldexp(1.0 + mant / ldexp(0.5, 53), expo - 0x3FF)
+        n = sign * ldexp(1.0 + m / ldexp(0.5, 53), e - 0x3FF)
     end
     return n, index + 9
 end
