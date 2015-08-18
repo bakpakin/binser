@@ -35,6 +35,8 @@ local byte = string.byte
 local format = string.format
 local sub = string.sub
 local floor = math.floor
+local frexp = math.frexp
+local ldexp = math.ldexp
 local unpack = unpack or table.unpack
 
 -- NIL = 202
@@ -59,31 +61,69 @@ local function not_array_index(x, len)
     return type(x) ~= "number" or x < 1 or x > len or x ~= floor(x)
 end
 
-local function number_to_str(x)
-    if x <= 100 and x >= -100 and floor(x) == x then -- int from -100 to 100
-        return char(x + 101)
-    else -- large ints, floating point numbers
-        return format("\203%.17g\203", x)
+local function number_to_str(n)
+    if n <= 100 and n >= -100 and floor(n) == n then -- int from -100 to 100
+        return char(n + 101)
     end
+    local sign = 0
+    if n < 0.0 then
+        sign = 0x80
+        n = -n
+    end
+    local mant, expo = frexp(n)
+    if mant ~= mant then
+        return char(203, 0xFF, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    elseif mant == 1/0 then
+        if sign == 0 then
+            return char(203, 0x7F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+        else
+            return char(203, 0xFF, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+        end
+    end
+    expo = expo + 0x3FE
+    if expo < 1 then -- denormalized numbers
+        mant = mant * ldexp(0.5, 53 + expo)
+        expo = 0
+    else
+        mant = (mant * 2 - 1) * ldexp(0.5, 53)
+    end
+    return char(203,
+                sign + floor(expo / 0x10),
+                (expo % 0x10) * 0x10 + floor(mant / 0x1000000000000),
+                floor(mant / 0x10000000000) % 0x100,
+                floor(mant / 0x100000000) % 0x100,
+                floor(mant / 0x1000000) % 0x100,
+                floor(mant / 0x10000) % 0x100,
+                floor(mant / 0x100) % 0x100,
+                mant % 0x100)
 end
 
-local nonrs = {
-    ["inf"] = 1/0,
-    ["-inf"] = -1/0,
-    ["nan"] = 0/0
-}
 local function number_from_str(str, index)
     local b = byte(str, index)
     if b > 0 and b < 202 then
         return b - 101, index + 1
     end
-    local endindex = index
-    repeat
-        endindex = endindex + 1
-        b = byte(str, endindex)
-    until b == 203 or not b
-    local substr = sub(str, index + 1, endindex - 1)
-    return tonumber(substr) or nonrs[substr], endindex + 1
+    local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
+    local sign = b1 > 0x7F and -1 or 1
+    local expo = (b1 % 0x80) * 0x10 + floor(b2 / 0x10)
+    local mant = ((((((b2 % 0x10) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
+    local n
+    if expo == 0 then
+        if mant == 0 then
+            n = sign * 0.0
+        else
+            n = sign * ldexp(mant / ldexp(0.5, 53), -1022)
+        end
+    elseif expo == 0x7FF then
+        if mant == 0 then
+            n = sign * (1/0)
+        else
+            n = 0.0/0.0
+        end
+    else
+        n = sign * ldexp(1.0 + mant / ldexp(0.5, 53), expo - 0x3FF)
+    end
+    return n, index + 9
 end
 
 local types = {}

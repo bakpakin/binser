@@ -12,7 +12,7 @@ describe("binser", function()
 
     it("Serializes numbers", function()
         -- NaN should work, but lua thinks NaN ~= NaN
-        test_ser(1, 2, 4, 809, -1290, math.huge, -math.huge)
+        test_ser(1, 2, 4, 809, -1290, math.huge, -math.huge, 0)
     end)
 
     it("Serializes numbers with no precision loss", function()
