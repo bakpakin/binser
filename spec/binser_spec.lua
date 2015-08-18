@@ -16,7 +16,8 @@ describe("binser", function()
     end)
 
     it("Serializes numbers with no precision loss", function()
-        test_ser(math.ldexp(0.985, 1023), math.ldexp(0.781231231, -1023))
+        test_ser(math.ldexp(0.985, 1023), math.ldexp(0.781231231, -1023),
+            math.ldexp(0.5, -1021), math.ldexp(0.5, -1022))
     end)
 
     it("Serializes strings", function()
@@ -75,6 +76,27 @@ describe("binser", function()
             c = "c"
         }, mt))
         binser.unregister(mt.name)
+    end)
+
+    it("Serializes serpent's benchmark data", function()
+        -- test data
+        local b = {text="ha'ns", ['co\nl or']='bl"ue', str="\"\n'\\\001"}
+        local a = {
+          x=1, y=2, z=3,
+          ['function'] = b, -- keyword as a key
+          list={'a',nil,nil, -- shared reference, embedded nils
+                [9]='i','f',[5]='g',[7]={}}, -- empty table
+          ['label 2'] = b, -- shared reference
+          [math.huge] = -math.huge, -- huge as number value
+        }
+        a.c = a -- self-reference
+        local c = {}
+        for i = 1, 500 do
+           c[i] = i
+        end
+        a.d = c
+        -- test data
+        test_ser(a)
     end)
 
 end)
