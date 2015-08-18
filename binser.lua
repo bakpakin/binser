@@ -102,7 +102,7 @@ local function number_to_str(n)
 end
 
 -- Copyright (C) 2012-2015 Francois Perrad.
--- number serialization code also modified from https://github.com/fperrad/lua-MessagePack
+-- number deserialization code also modified from https://github.com/fperrad/lua-MessagePack
 local function number_from_str(str, index)
     local b = byte(str, index)
     if b > 0 and b < 202 then
@@ -216,7 +216,7 @@ function types.table(x, visited, accum)
 end
 
 types.thread = function() error("Cannot serialize threads.") end
-types["function"] = function() error("Cannot serialize functions") end
+types["function"] = function() error("Cannot serialize functions.") end
 
 local function deserialize_value(str, index, visited)
     local t = byte(str, index)
@@ -361,6 +361,8 @@ local function registerClass(class, name)
 end
 
 return {
+    s = serialize,
+    d = deserialize,
     serialize = serialize,
     deserialize = deserialize,
     register = register,
