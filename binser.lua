@@ -156,6 +156,10 @@ local function check_custom_type(x, visited, accum, alen)
     local mt = getmetatable(x)
     local id = mt and ids[mt]
     if id then
+        if x == visited.temp then
+            error("Infinite loop in constructor.")
+        end
+        visited.temp = x
         accum[alen + 1] = "\209"
         types[type(id)](id, visited, accum)
         alen = #accum
@@ -165,6 +169,8 @@ local function check_custom_type(x, visited, accum, alen)
             local arg = args[i]
             types[type(arg)](arg, visited, accum)
         end
+        visited[x] = visited.next
+        visited.next = visited.next + 1
         return true
     end
 end
@@ -175,8 +181,6 @@ function types.userdata(x, visited, accum)
         accum[alen + 1] = "\208"
         accum[alen + 2] = number_to_str(visited[x])
     else
-        visited[x] = visited.next
-        visited.next =  visited.next + 1
         if check_custom_type(x, visited, accum, alen) then return end
         error("Cannot serialize this userdata.")
     end
@@ -188,9 +192,9 @@ function types.table(x, visited, accum)
         accum[alen + 1] = "\208"
         accum[alen + 2] = number_to_str(visited[x])
     else
+        if check_custom_type(x, visited, accum, alen) then return end
         visited[x] = visited.next
         visited.next =  visited.next + 1
-        if check_custom_type(x, visited, accum, alen) then return end
         accum[alen + 1] = "\207"
         accum[alen + 2] = false -- temporary value
         local array_len, array_value = 0

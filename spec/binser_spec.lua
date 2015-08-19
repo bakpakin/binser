@@ -1,8 +1,8 @@
 local binser = require "binser"
 
 local function test_ser(...)
-    local serialized_data = binser.serialize(...)
-    local results = { binser.deserialize(serialized_data) }
+    local serialized_data = binser.s(...)
+    local results = { binser.d(serialized_data) }
     for i = 1, select("#", ...) do
         assert.are.same(select(i, ...), results[i])
     end
@@ -78,6 +78,42 @@ describe("binser", function()
         binser.unregister(mt.name)
     end)
 
+    it("Serializes custom type references", function()
+        local mt = {
+            name = "MyCoolType"
+        }
+        binser.register(mt)
+        local a = setmetatable({}, mt)
+        test_ser(a, a, a)
+        local b1, b2, b3 = binser.d(binser.s(a, a, a))
+        assert.are.same(b1, b2)
+        assert.are.same(b2, b3)
+        binser.unregister(mt.name)
+    end)
+
+    it("Serializes cyclic tables in constructors", function()
+        local mt
+        mt = {
+            name = "MyCoolType",
+            _serialize = function(x)
+                local a = {value = x.value}
+                a[a] = a -- add useless cycling to try and confuse the serializer
+                return a
+            end,
+            _deserialize = function(a)
+                return setmetatable({value = a.value}, mt)
+            end
+        }
+        binser.register(mt)
+        local a = setmetatable({value = 30}, mt)
+        local b = setmetatable({value = 40}, mt)
+        local c = {}
+        c.a = a
+        c.b = b
+        test_ser(a, c, b)
+        binser.unregister(mt.name)
+    end)
+
     it("Serializes serpent's benchmark data", function()
         -- test data
         local b = {text="ha'ns", ['co\nl or']='bl"ue', str="\"\n'\\\001"}
@@ -97,6 +133,18 @@ describe("binser", function()
         a.d = c
         -- test data
         test_ser(a)
+    end)
+
+    it("Fails gracefully on impossible constructors", function()
+        local mt = {
+            name = "MyCoolType",
+            _serialize = function(x) return x end,
+            _deserialize = function(x) return x end
+        }
+        binser.register(mt)
+        local a = setmetatable({}, mt)
+        assert.has_error(function() binser.s(a, a, a) end, "Infinite loop in constructor.")
+        binser.unregister(mt.name)
     end)
 
 end)
