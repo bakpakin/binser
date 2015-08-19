@@ -215,6 +215,7 @@ function types.table(x, visited, accum)
     end
 end
 
+types.cdata = function() error("Cannot serialize cdata.") end
 types.thread = function() error("Cannot serialize threads.") end
 types["function"] = function() error("Cannot serialize functions.") end
 
@@ -250,6 +251,9 @@ local function deserialize_value(str, index, visited)
             ret[k] = v
         end
         return ret, nextindex
+    elseif t == 208 then
+        local ref, nextindex = number_from_str(str, index + 1)
+        return visited[ref], nextindex
     elseif t == 209 then
         local count
         local name, nextindex = deserialize_value(str, index + 1, visited)
@@ -261,9 +265,6 @@ local function deserialize_value(str, index, visited)
         local ret = deserializers[name](unpack(args))
         visited[#visited + 1] = ret
         return ret, nextindex
-    elseif t == 208 then
-        local ref, nextindex = number_from_str(str, index + 1)
-        return visited[ref], nextindex
     end
 end
 
