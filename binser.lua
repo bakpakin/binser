@@ -50,11 +50,13 @@ local unpack = unpack or table.unpack
 -- REFERENCE = 208
 -- CONSTRUCTOR = 209
 -- FUNCTION = 210
+-- RESOURCE = 211
 
 local mts = {}
 local ids = {}
 local serializers = {}
 local deserializers = {}
+local resources = {}
 
 local function pack(...)
     return {...}, select("#", ...)
@@ -150,12 +152,25 @@ end
 
 function types.string(x, visited, accum)
     local alen = #accum
-    accum[alen + 1] = "\206"
-    accum[alen + 2] = number_to_str(#x)
-    accum[alen + 3] = x
+    if visited[x] then
+        accum[alen + 1] = "\208"
+        accum[alen + 2] = number_to_str(visited[x])
+    else
+        visited[x] = visited.next
+        visited.next =  visited.next + 1
+        accum[alen + 1] = "\206"
+        accum[alen + 2] = number_to_str(#x)
+        accum[alen + 3] = x
+    end
 end
 
 local function check_custom_type(x, visited, accum, alen)
+    local res = resources[x]
+    if res then
+        accum[alen + 1] = "\211"
+        types[type(res)](res, visited, accum)
+        return true
+    end
     local mt = getmetatable(x)
     local id = mt and ids[mt]
     if id then
@@ -223,14 +238,33 @@ function types.table(x, visited, accum)
 end
 
 types["function"] = function(x, visited, accum)
-    local str = dump(x)
     local alen = #accum
-    accum[alen + 1] = "\210"
-    accum[alen + 2] = number_to_str(#str)
-    accum[alen + 3] = str
+    if visited[x] then
+        accum[alen + 1] = "\208"
+        accum[alen + 2] = number_to_str(visited[x])
+    else
+        if check_custom_type(x, visited, accum, alen) then return end
+        visited[x] = visited.next
+        visited.next =  visited.next + 1
+        local str = dump(x)
+        accum[alen + 1] = "\210"
+        accum[alen + 2] = number_to_str(#str)
+        accum[alen + 3] = str
+    end
 end
 
-types.cdata = function() error("Cannot serialize cdata.") end
+types.cdata = function(x, visited, accum)
+    local alen = #accum
+    if visited[x] then
+        accum[alen + 1] = "\208"
+        accum[alen + 2] = number_to_str(visited[x])
+    else
+        -- TODO implement custom cdata serialization for luajit
+        if check_custom_type(x, visited, accum, alen) then return end
+        error("Cannot serialize this cdata.")
+    end
+end
+
 types.thread = function() error("Cannot serialize threads.") end
 
 local function deserialize_value(str, index, visited)
@@ -249,7 +283,9 @@ local function deserialize_value(str, index, visited)
     elseif t == 206 then
         local length, dataindex = deserialize_value(str, index + 1, visited)
         local nextindex = dataindex + length
-        return sub(str, dataindex, nextindex - 1), nextindex
+        local substr = sub(str, dataindex, nextindex - 1)
+        visited[#visited + 1] = substr
+        return substr, nextindex
     elseif t == 207 then
         local count, nextindex = number_from_str(str, index + 1)
         local ret = {}
