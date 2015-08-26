@@ -29,11 +29,13 @@ local getmetatable = getmetatable
 local setmetatable = setmetatable
 local tonumber = tonumber
 local type = type
+local loadstring = loadstring
 local concat = table.concat
 local char = string.char
 local byte = string.byte
 local format = string.format
 local sub = string.sub
+local dump = string.dump
 local floor = math.floor
 local frexp = math.frexp
 local ldexp = math.ldexp
@@ -47,6 +49,7 @@ local unpack = unpack or table.unpack
 -- TABLE = 207
 -- REFERENCE = 208
 -- CONSTRUCTOR = 209
+-- FUNCTION = 210
 
 local mts = {}
 local ids = {}
@@ -219,9 +222,16 @@ function types.table(x, visited, accum)
     end
 end
 
+types["function"] = function(x, visited, accum)
+    local str = dump(x)
+    local alen = #accum
+    accum[alen + 1] = "\210"
+    accum[alen + 2] = number_to_str(#str)
+    accum[alen + 3] = str
+end
+
 types.cdata = function() error("Cannot serialize cdata.") end
 types.thread = function() error("Cannot serialize threads.") end
-types["function"] = function() error("Cannot serialize functions.") end
 
 local function deserialize_value(str, index, visited)
     local t = byte(str, index)
@@ -269,6 +279,10 @@ local function deserialize_value(str, index, visited)
         local ret = deserializers[name](unpack(args))
         visited[#visited + 1] = ret
         return ret, nextindex
+    elseif t == 210 then
+        local length, dataindex = deserialize_value(str, index + 1, visited)
+        local nextindex = dataindex + length
+        return loadstring(sub(str, dataindex, nextindex - 1)), nextindex
     end
 end
 

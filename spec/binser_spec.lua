@@ -114,6 +114,14 @@ describe("binser", function()
         binser.unregister(mt.name)
     end)
 
+    it("Serializes functions", function()
+        local function myFn(a, b)
+            return (a + b) * math.sqrt(a + b)
+        end
+        local myNewFn = binser.d(binser.s(myFn))
+        assert.are.same(myNewFn(10, 9), myFn(10, 9))
+    end)
+
     it("Serializes serpent's benchmark data", function()
         -- test data
         local b = {text="ha'ns", ['co\nl or']='bl"ue', str="\"\n'\\\001"}
