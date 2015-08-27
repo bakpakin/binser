@@ -122,6 +122,19 @@ describe("binser", function()
         assert.are.same(myNewFn(10, 9), myFn(10, 9))
     end)
 
+    it("Serializes with resources", function()
+        local myResource = {"This is a resource."}
+        binser.registerResource(myResource, "myResource")
+        test_ser({1, 3, 5, 7, 8, myResource})
+
+        local data = binser.s(myResource)
+        myResource[2] = "This is some new data."
+        local deserdata = binser.d(data)
+        assert(myResource == deserdata)
+
+        binser.unregisterResource("myResource")
+    end)
+
     it("Serializes serpent's benchmark data", function()
         -- test data
         local b = {text="ha'ns", ['co\nl or']='bl"ue', str="\"\n'\\\001"}

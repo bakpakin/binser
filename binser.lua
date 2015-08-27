@@ -57,6 +57,7 @@ local ids = {}
 local serializers = {}
 local deserializers = {}
 local resources = {}
+local resources_by_name = {}
 
 local function pack(...)
     return {...}, select("#", ...)
@@ -64,6 +65,11 @@ end
 
 local function not_array_index(x, len)
     return type(x) ~= "number" or x < 1 or x > len or x ~= floor(x)
+end
+
+local function type_check(x, tp, name)
+    assert(type(x) == tp,
+        format("Expected parameter %q to be of type %q.", name, tp))
 end
 
 -- Copyright (C) 2012-2015 Francois Perrad.
@@ -319,6 +325,9 @@ local function deserialize_value(str, index, visited)
         local length, dataindex = deserialize_value(str, index + 1, visited)
         local nextindex = dataindex + length
         return loadstring(sub(str, dataindex, nextindex - 1)), nextindex
+    elseif t == 211 then
+        local res, nextindex = deserialize_value(str, index + 1, visited)
+        return resources_by_name[res], nextindex
     end
 end
 
@@ -333,6 +342,7 @@ local function serialize(...)
 end
 
 local function deserialize(str)
+    assert(type(str) == "string", "Expected string to deserialize.")
     local vals = {}
     local index = 1
     local visited = {}
@@ -382,6 +392,10 @@ local function register(metatable, name, serialize, deserialize)
             serialize = metatable
         end
     end
+    type_check(metatable, "table", "metatable")
+    type_check(name, "string", "name")
+    type_check(serialize, "function", "serialize")
+    type_check(deserialize, "function", "deserialize")
     assert(not ids[metatable], "Metatable already registered.")
     assert(not mts[name], ("Name %q already registered."):format(name))
     mts[name] = metatable
@@ -398,6 +412,8 @@ local function unregister(item)
     else -- assume metatable
         name, metatable = ids[item], item
     end
+    type_check(name, "string", "name")
+    type_check(metatable, "table", "metatable")
     mts[name] = nil
     ids[metatable] = nil
     serializers[name] = nil
@@ -415,6 +431,24 @@ local function registerClass(class, name)
     return class
 end
 
+local function registerResource(resource, name)
+    type_check(name, "string", "name")
+    assert(not resources[resource],
+        "Resource already registered.")
+    assert(not resources_by_name[name],
+        format("Resource %q already exists.", name))
+    resources_by_name[name] = resource
+    resources[resource] = name
+end
+
+local function unregisterResource(name)
+    type_check(name, "string", "name")
+    assert(resources_by_name[name], format("Resource %q does not exist.", name))
+    local resource = resources_by_name[name]
+    resources_by_name[name] = nil
+    resources[resource] = nil
+end
+
 return {
     s = serialize,
     d = deserialize,
@@ -422,5 +456,7 @@ return {
     deserialize = deserialize,
     register = register,
     unregister = unregister,
+    registerResource = registerResource,
+    unregisterResource = unregisterResource,
     registerClass = registerClass
 }
