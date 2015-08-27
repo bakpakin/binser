@@ -439,6 +439,7 @@ local function registerResource(resource, name)
         format("Resource %q already exists.", name))
     resources_by_name[name] = resource
     resources[resource] = name
+    return resource
 end
 
 local function unregisterResource(name)
@@ -447,6 +448,7 @@ local function unregisterResource(name)
     local resource = resources_by_name[name]
     resources_by_name[name] = nil
     resources[resource] = nil
+    return resource
 end
 
 return {

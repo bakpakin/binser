@@ -2,12 +2,12 @@
 
 [![Build Status](https://travis-ci.org/bakpakin/binser.png?branch=master)](https://travis-ci.org/bakpakin/binser)
 
-There already exists a number of serializers for lua, each with their own uses,
-limitations, and quirks. binser is yet another robust, pure lua serializer that
-specializes in serializing lua data with lots of userdata and custom classes
+There already exists a number of serializers for Lua, each with their own uses,
+limitations, and quirks. binser is yet another robust, pure Lua serializer that
+specializes in serializing Lua data with lots of userdata and custom classes
 and types. binser is a binary serializer and does not serialize data into
-human readable representation or use the lua parser to read expressions. This
-makes it safe and moderately fast, especially on Luajit. binser also handles
+human readable representation or use the Lua parser to read expressions. This
+makes it safe and moderately fast, especially on LuaJIT. binser also handles
 cycles, self-references, and metatables.
 
 ## How to Use
@@ -26,7 +26,7 @@ print(binser.deserialize(mydata))
 ```lua
 local str = binser.serialize(...)
 ```
-Serialize (almost) any lua data into a lua string. Numbers, strings, tables,
+Serialize (almost) any Lua data into a Lua string. Numbers, strings, tables,
 booleans, and nil are all fully supported by default. Custom userdata and custom
 types, both identified by metatables, can also be supported by specifying a
 custom serialization function. Unserializable data should throw an error.
@@ -72,8 +72,25 @@ local metatable = binser.unregister(name)
 ```
 Users should seldom need this, but to explicitly unregister a type, call this.
 
+### Resources
+
+If there are certain objects that don't need to be serialized at all, like
+images, audio, or any system resource, binser can mark them as such to only
+serialize a reference to them. Resources must be registered in a similar way to
+custom types and given a unique name.
+
+```lua
+local resource = binser.registerResource(resource, name)
+```
+
+Resources can be unregistered in a similar manner as custom types.
+
+```lua
+local resource = binser.unregisterResource(name)
+```
+
 ## Why
-Most lua serializers serialize into valid lua code, which while very useful,
+Most Lua serializers serialize into valid Lua code, which while very useful,
 makes it impossible to do things like custom serialization and
 deserialization. binser was originally written as a way to save game levels
 with images and other native resources, but is extremely general.
@@ -89,8 +106,10 @@ binser uses [busted](http://olivinelabs.com/busted/) for testing. Install and
 run `busted` from the command line to test.
 
 ## Notes
-Serialized strings can contain unprintable and null characters. Also,
-serialized data can be appended to other serialized data. (Cool :))
+* Serialized strings can contain unprintable and null characters.
+* Serialized data can be appended to other serialized data. (Cool :))
+* The functions `binser.serialize` and `binser.deserialize` can be shortened to
+`binser.s` and `binser.d` as a handy shortcut.
 
 ## Bugs
 Pull requests are welcome, please help me squash bugs!
