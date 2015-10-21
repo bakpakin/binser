@@ -170,10 +170,10 @@ function types.string(x, visited, accum)
     end
 end
 
-local function check_custom_type(x, visited, accum, alen)
+local function check_custom_type(x, visited, accum)
     local res = resources[x]
     if res then
-        accum[alen + 1] = "\211"
+        accum[#accum + 1] = "\211"
         types[type(res)](res, visited, accum)
         return true
     end
@@ -184,11 +184,10 @@ local function check_custom_type(x, visited, accum, alen)
             error("Infinite loop in constructor.")
         end
         visited.temp = x
-        accum[alen + 1] = "\209"
+        accum[#accum + 1] = "\209"
         types[type(id)](id, visited, accum)
-        alen = #accum
         local args, len = pack(serializers[id](x))
-        accum[alen + 1] = number_to_str(len)
+        accum[#accum + 1] = number_to_str(len)
         for i = 1, len do
             local arg = args[i]
             types[type(arg)](arg, visited, accum)
@@ -200,28 +199,26 @@ local function check_custom_type(x, visited, accum, alen)
 end
 
 function types.userdata(x, visited, accum)
-    local alen = #accum
     if visited[x] then
-        accum[alen + 1] = "\208"
-        accum[alen + 2] = number_to_str(visited[x])
+        accum[#accum + 1] = "\208"
+        accum[#accum + 1] = number_to_str(visited[x])
     else
-        if check_custom_type(x, visited, accum, alen) then return end
+        if check_custom_type(x, visited, accum) then return end
         error("Cannot serialize this userdata.")
     end
 end
 
 function types.table(x, visited, accum)
-    local alen = #accum
     if visited[x] then
-        accum[alen + 1] = "\208"
-        accum[alen + 2] = number_to_str(visited[x])
+        accum[#accum + 1] = "\208"
+        accum[#accum + 1] = number_to_str(visited[x])
     else
-        if check_custom_type(x, visited, accum, alen) then return end
+        if check_custom_type(x, visited, accum) then return end
         visited[x] = visited.next
         visited.next =  visited.next + 1
         local xlen = #x
-        accum[alen + 1] = "\207"
-        accum[alen + 2] = number_to_str(xlen)
+        accum[#accum + 1] = "\207"
+        accum[#accum + 1] = number_to_str(xlen)
         for i = 1, xlen do
             local v = x[i]
             types[type(v)](v, visited, accum)
@@ -243,29 +240,26 @@ function types.table(x, visited, accum)
 end
 
 types["function"] = function(x, visited, accum)
-    local alen = #accum
     if visited[x] then
-        accum[alen + 1] = "\208"
-        accum[alen + 2] = number_to_str(visited[x])
+        accum[#accum + 1] = "\208"
+        accum[#accum + 1] = number_to_str(visited[x])
     else
-        if check_custom_type(x, visited, accum, alen) then return end
+        if check_custom_type(x, visited, accum) then return end
         visited[x] = visited.next
         visited.next =  visited.next + 1
         local str = dump(x)
-        accum[alen + 1] = "\210"
-        accum[alen + 2] = number_to_str(#str)
-        accum[alen + 3] = str
+        accum[#accum + 1] = "\210"
+        accum[#accum + 1] = number_to_str(#str)
+        accum[#accum + 1] = str
     end
 end
 
 types.cdata = function(x, visited, accum)
-    local alen = #accum
     if visited[x] then
-        accum[alen + 1] = "\208"
-        accum[alen + 2] = number_to_str(visited[x])
+        accum[#accum + 1] = "\208"
+        accum[#accum + 1] = number_to_str(visited[x])
     else
-        -- TODO implement custom cdata serialization for luajit
-        if check_custom_type(x, visited, accum, alen) then return end
+        if check_custom_type(x, visited, #accum) then return end
         error("Cannot serialize this cdata.")
     end
 end
@@ -340,6 +334,45 @@ local function serialize(...)
     return concat(accum)
 end
 
+local function make_file_writer(file, max_buffer_len)
+    local rawset = rawset
+    local mt = {
+        __newindex = function(self, k, v)
+            if k >= max_buffer_len then
+                file:write(concat(self))
+                for i = #self, 1, -1 do  -- Clear the table
+                    self[i] = nil
+                end
+                rawset(self, 1, v)
+            else
+                rawset(self, k, v)
+            end
+        end,
+    }
+end
+
+local function serialize_to_file(path, mode, ...)
+    local file, err = io.open(path, mode)
+    assert(file, err)
+    local visited = {next = 1}
+    local accum = make_file_writer(file, 2048)
+    for i = 1, select("#", ...) do
+        local x = select(i, ...)
+        types[type(x)](x, visited, accum)
+    end
+    -- flush the writer
+    accum[2048] = true
+    file:close()
+end
+
+local function writeFile(path, ...)
+    return serialize_to_file(path, "wb", ...)
+end
+
+local function appendFile(path, ...)
+    return serialize_to_file(path, "ab", ...)
+end
+
 local function deserialize(str)
     assert(type(str) == "string", "Expected string to deserialize.")
     local vals = {}
@@ -355,6 +388,14 @@ local function deserialize(str)
         end
     end
     return unpack(vals, 1, len)
+end
+
+local function readFile(path)
+    local file, err = io.open(path, "rb")
+    assert(file, err)
+    local str = file:read("*all")
+    file:close()
+    return deserialize(str)
 end
 
 local function default_deserialize(metatable)
@@ -451,10 +492,18 @@ local function unregisterResource(name)
 end
 
 return {
+    -- aliases
     s = serialize,
     d = deserialize,
+    r = readFile,
+    w = writeFile,
+    a = appendFile,
+
     serialize = serialize,
     deserialize = deserialize,
+    readFile = readFile,
+    writeFile = writeFile,
+    appendFile = appendFile,
     register = register,
     unregister = unregister,
     registerResource = registerResource,
