@@ -219,27 +219,26 @@ function types.table(x, visited, accum)
         if check_custom_type(x, visited, accum, alen) then return end
         visited[x] = visited.next
         visited.next =  visited.next + 1
+        local xlen = #x
         accum[alen + 1] = "\207"
-        accum[alen + 2] = false -- temporary value
-        local array_len, array_value = 0
-        while true do
-            array_value = x[array_len + 1]
-            if array_value == nil then break end
-            types[type(array_value)](array_value, visited, accum)
-            array_len = array_len + 1
+        accum[alen + 2] = number_to_str(xlen)
+        for i = 1, xlen do
+            local v = x[i]
+            types[type(v)](v, visited, accum)
         end
-        accum[alen + 2] = number_to_str(array_len)
-        local non_array_keys = #accum + 1
-        accum[non_array_keys] = false -- temporary value
         local key_count = 0
-        for k, v in pairs(x) do
-            if not_array_index(k, array_len) then
+        for k in pairs(x) do
+            if not_array_index(k, xlen) then
                 key_count = key_count + 1
+            end
+        end
+        accum[#accum + 1] = number_to_str(key_count)
+        for k, v in pairs(x) do
+            if not_array_index(k, xlen) then
                 types[type(k)](k, visited, accum)
                 types[type(v)](v, visited, accum)
             end
         end
-        accum[non_array_keys] = number_to_str(key_count)
     end
 end
 
