@@ -420,12 +420,80 @@ local function default_serialize(x)
     return unpack(args, 1, len)
 end
 
+-- Templating
+
+local function normalize_template(template)
+    local ret = {}
+    for i = 1, #template do
+        ret[i] = template[i]
+    end
+    local non_array_part = {}
+    -- The non-array part of the template (nested templates) have to be deterministic, so they are sorted.
+    -- This means that inherently non deterministicly sortable keys (tables, functions) should NOT be used
+    -- in templates. Looking for way around this.
+    for k in pairs(template) do
+        if not_array_index(k, #template) then
+            non_array_part[#non_array_part + 1] = k
+        end
+    end
+    table.sort(non_array_part)
+    for i = 1, #non_array_part do
+        local name = non_array_part[i]
+        ret[#ret + 1] = {name, normalize_template(template[name])}
+    end
+    return ret
+end
+
+local function templatepart_serialize(part, argaccum, x, len)
+    for i = 1, #part do
+        if type(part[i]) == "table" then
+            len = templatepart_serialize(part[i][2], argaccum, x[part[i][1]], len)
+        else
+            len = len + 1
+            argaccum[len] = x[part[i]]
+        end
+    end
+    return len
+end
+
+local function templatepart_deserialize(ret, part, values, vindex)
+    for i = 1, #part do
+        local name = part[i]
+        if type(name) == "table" then
+            local newret = {}
+            ret[name[1]] = newret
+            vindex = templatepart_deserialize(newret, name[2], values, vindex)
+        else
+            ret[name] = values[vindex]
+            vindex = vindex + 1
+        end
+    end
+    return vindex
+end
+
+local function create_class_serializer_and_deserializer(metatable, template)
+    return function(x)
+        argaccum = {}
+        local len = templatepart_serialize(template, argaccum, x, 0)
+        return unpack(argaccum, 1, len)
+    end, function(...)
+        local ret = {}
+        local len = select("#", ...)
+        local args = {...}
+        templatepart_deserialize(ret, template, args, 1)
+        return setmetatable(ret, metatable)
+    end
+end
+
 local function register(metatable, name, serialize, deserialize)
     name = name or metatable.name
     serialize = serialize or metatable._serialize
     deserialize = deserialize or metatable._deserialize
     if not serialize then
-        if not deserialize then
+        if metatable._template then
+            local t = normalize_template(metatable._template)
+            serialize, deserialize = create_class_serializer_and_deserializer(metatable, t)
+        elseif not deserialize then
             serialize = default_serialize
             deserialize = default_deserialize(metatable)
         else

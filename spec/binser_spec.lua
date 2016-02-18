@@ -168,4 +168,43 @@ describe("binser", function()
         binser.unregister(mt.name)
     end)
 
+    it("Can use templates to have more efficient custom serialization and deserialization", function()
+        local mt = {
+            name = "marshalledtype",
+            _template = {
+                "cat", "dog", 0, false
+            }
+        }
+        local a = setmetatable({
+            cat = "meow",
+            dog = "woof",
+            [0] = "something",
+            [false] = 1
+        }, mt)
+        binser.register(mt)
+        test_ser(a)
+        binser.unregister(mt)
+    end)
+
+    it("Can use nested templates", function()
+        local mt = {
+            name = "mtype",
+            _template = {
+                "movie", joe = { "age", "width", "height" }, "yolo"
+            }
+        }
+        local a = setmetatable({
+            movie = "Die Hard",
+            joe = {
+                age = 25,
+                width = "kinda wide",
+                height = "not so tall"
+            },
+            yolo = "bolo"
+        }, mt)
+        binser.register(mt)
+        test_ser(a)
+        binser.unregister(mt)
+    end)
+
 end)
