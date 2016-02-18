@@ -109,7 +109,7 @@ print(#binser.s(joe))
 binser.unregister(Employee_MT)
 
 -- Print length of serialized employee with templating
--- 66
+-- 72
 Employee_MT._template = template
 binser.registerClass(Employee_MT)
 print(#binser.s(joe))

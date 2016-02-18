@@ -228,4 +228,23 @@ describe("binser", function()
         binser.unregister(mt)
     end)
 
+    it("Can use templates that don't fully specify an object", function()
+        local mt = {
+            name = "marshalledtype",
+            _template = {
+                "cat", "dog", 0, false
+            }
+        }
+        local a = setmetatable({
+            cat = "meow",
+            dog = "woof",
+            [0] = "something",
+            [false] = 1,
+            notintemplate = "woops."
+        }, mt)
+        binser.register(mt)
+        test_ser(a)
+        binser.unregister(mt)
+    end)
+
 end)

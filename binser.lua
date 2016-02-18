@@ -445,15 +445,22 @@ local function normalize_template(template)
 end
 
 local function templatepart_serialize(part, argaccum, x, len)
+    local extras = {}
+    for k, v in pairs(x) do
+        extras[k] = v
+    end
     for i = 1, #part do
         if type(part[i]) == "table" then
+            extras[part[i][1]] = nil
             len = templatepart_serialize(part[i][2], argaccum, x[part[i][1]], len)
         else
+            extras[part[i]] = nil
             len = len + 1
             argaccum[len] = x[part[i]]
         end
     end
-    return len
+    argaccum[len + 1] = extras
+    return len + 1
 end
 
 local function templatepart_deserialize(ret, part, values, vindex)
@@ -468,7 +475,11 @@ local function templatepart_deserialize(ret, part, values, vindex)
             vindex = vindex + 1
         end
     end
-    return vindex
+    local extras = values[vindex]
+    for k, v in pairs(extras) do
+        ret[k] = v
+    end
+    return vindex + 1
 end
 
 local function template_serializer_and_deserializer(metatable, template)
