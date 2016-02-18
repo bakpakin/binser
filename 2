@@ -45,14 +45,14 @@ Registers a custom type, identified by its metatable, to be serialzed.
 Registering types has two main purposes. First, it allows custom serialization
 and deserialization for userdata and tables that contain userdata, which can't
 otherwise be serialized in a uniform way. Second, it allows efficient
-serialization of small tables with large metatables, as registered metatables
+serialization of small tables with large metatables, as regsistered metatables
 are not serialized.
 
 The `metatable` parameter is the metatable the identifies the type. The `name`
 parameter is the type name used in serialization. The only requirement for names
 is that they are unique. The `serialize` and `deserialize` parameters are
 a pair of functions that construct and destruct and instance of the type.
-`serialize` can return any number of serializable Lua objects, and
+`serialize` can return any number of serializable lua objects, and
 `deserialize` should accept the arguments returned by `serialize`.
 `serialize` and `deserialize` can also be specified in `metatable._serialize`
 and `metatable._deserialize` respectively.
@@ -72,94 +72,25 @@ local metatable = binser.unregister(name)
 ```
 Users should seldom need this, but to explicitly unregister a type, call this.
 
-#### Templates
-
-If binser's already compact serialization isn't enough, and you don't want to write
-complex and error prone custom serializers, binser has a functionality called templating.
-Templates specify the layout of a custom type, so that table keys don't need to be serialized
-many times. To specify a template, add the `_template` key to the metatable of your type.
-
-An example:
-```lua
-local template = {
-	"name", "age", "salary", "email",
-	nested = {"more", "nested", "keys"}
-}
-
-local Employee_MT = {
-	name = "Employee",
-}
-
-local joe = setmetatable({
-	name = "Joe",
-	age = 11,
-	salary = "$1,000,000",
-	email = "joe@example.com",
-	nested = {
-		more = "blah",
-		nested = "FUBAR",
-		keys = "lost"
-	}
-}, Employee_MT)
-
--- Print length of serialized employee without templating
--- 117
-binser.registerClass(Employee_MT)
-print(#binser.s(joe))
-binser.unregister(Employee_MT)
-
--- Print length of serialized employee with templating
--- 66
-Employee_MT._template = template
-binser.registerClass(Employee_MT)
-print(#binser.s(joe))
-```
-
-In the above example, the resulting serialized value with templating is nearly half of the size of the default
-table serialization.
-
 ### Resources
 
 If there are certain objects that don't need to be serialized at all, like
 images, audio, or any system resource, binser can mark them as such to only
 serialize a reference to them. Resources must be registered in a similar way to
 custom types and given a unique name.
+
 ```lua
 local resource = binser.registerResource(resource, name)
 ```
-Registers a resource.
+
+Resources can be unregistered in a similar manner as custom types.
 
 ```lua
 local resource = binser.unregisterResource(name)
 ```
-Resources can be unregistered in a similar manner as custom types.
 
 ### File IO
-Mostly for convenience, binser has functions for writing and reading to files.
-These work through Lua's built in IO.
-
-```lua
-binser.writeFile(file, ...)
-```
-Serializes Lua objects and writes them to a file. Overwrites the previous file.
-
-```lua
-binser.appendFile(file, ...)
-```
-Same as writing to a file, but doesn't overwrite the old file.
-
-```lua
-local ... = binser.readFile(file)
-```
-Reads and deserializes a file.
-
-The trio of file convenience function have shortened aliases as well.
-
-| Function          | Alias    |
-|-------------------|----------|
-|`binser.writeFile` |`binser.w`|
-|`binser.appendFile`|`binser.a`|
-|`binser.readFile`  |`binser.r`|
+Mostly for convenience, binser has facilities for writing and reading to files. 
 
 ## Why
 Most Lua serializers serialize into valid Lua code, which while very useful,

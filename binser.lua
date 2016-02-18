@@ -471,7 +471,7 @@ local function templatepart_deserialize(ret, part, values, vindex)
     return vindex
 end
 
-local function create_class_serializer_and_deserializer(metatable, template)
+local function template_serializer_and_deserializer(metatable, template)
     return function(x)
         argaccum = {}
         local len = templatepart_serialize(template, argaccum, x, 0)
@@ -492,7 +492,7 @@ local function register(metatable, name, serialize, deserialize)
     if not serialize then
         if metatable._template then
             local t = normalize_template(metatable._template)
-            serialize, deserialize = create_class_serializer_and_deserializer(metatable, t)
+            serialize, deserialize = template_serializer_and_deserializer(metatable, t)
         elseif not deserialize then
             serialize = default_serialize
             deserialize = default_deserialize(metatable)
