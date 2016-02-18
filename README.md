@@ -139,17 +139,17 @@ Mostly for convenience, binser has functions for writing and reading to files.
 These work through Lua's built in IO.
 
 ```lua
-binser.writeFile(file, ...)
+binser.writeFile(filepath, ...)
 ```
 Serializes Lua objects and writes them to a file. Overwrites the previous file.
 
 ```lua
-binser.appendFile(file, ...)
+binser.appendFile(filepath, ...)
 ```
 Same as writing to a file, but doesn't overwrite the old file.
 
 ```lua
-local ... = binser.readFile(file)
+local ... = binser.readFile(filepath)
 ```
 Reads and deserializes a file.
 
