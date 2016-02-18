@@ -334,34 +334,25 @@ local function serialize(...)
     return concat(accum)
 end
 
-local function make_file_writer(file, max_buffer_len)
-    local rawset = rawset
-    local mt = {
-        __newindex = function(self, k, v)
-            if k >= max_buffer_len then
-                file:write(concat(self))
-                for i = #self, 1, -1 do  -- Clear the table
-                    self[i] = nil
-                end
-                rawset(self, 1, v)
-            else
-                rawset(self, k, v)
-            end
-        end,
-    }
+local function make_file_writer(file)
+    return setmetatable({}, {
+        __newindex = function(_, _, v)
+            file:write(v)
+        end
+    })
 end
 
 local function serialize_to_file(path, mode, ...)
     local file, err = io.open(path, mode)
     assert(file, err)
     local visited = {next = 1}
-    local accum = make_file_writer(file, 2048)
+    local accum = make_file_writer(file)
     for i = 1, select("#", ...) do
         local x = select(i, ...)
         types[type(x)](x, visited, accum)
     end
     -- flush the writer
-    accum[2048] = true
+    file:flush()
     file:close()
 end
 
@@ -446,10 +437,13 @@ end
 
 local function templatepart_serialize(part, argaccum, x, len)
     local extras = {}
+    local extracount = 0
     for k, v in pairs(x) do
         extras[k] = v
+        extracount = extracount + 1
     end
     for i = 1, #part do
+        extracount = extracount - 1
         if type(part[i]) == "table" then
             extras[part[i][1]] = nil
             len = templatepart_serialize(part[i][2], argaccum, x[part[i][1]], len)
@@ -459,7 +453,11 @@ local function templatepart_serialize(part, argaccum, x, len)
             argaccum[len] = x[part[i]]
         end
     end
-    argaccum[len + 1] = extras
+    if extracount > 0 then
+        argaccum[len + 1] = extras
+    else
+        argaccum[len + 1] = nil
+    end
     return len + 1
 end
 
@@ -476,8 +474,10 @@ local function templatepart_deserialize(ret, part, values, vindex)
         end
     end
     local extras = values[vindex]
-    for k, v in pairs(extras) do
-        ret[k] = v
+    if extras then
+        for k, v in pairs(extras) do
+            ret[k] = v
+        end
     end
     return vindex + 1
 end
