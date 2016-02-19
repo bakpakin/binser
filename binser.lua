@@ -74,10 +74,15 @@ end
 
 -- Copyright (C) 2012-2015 Francois Perrad.
 -- number serialization code modified from https://github.com/fperrad/lua-MessagePack
--- Encode a number as a big-endian ieee-754 double (or a single byte)
+-- Encode a number as a big-endian ieee-754 double (or a small integer)
 local function number_to_str(n)
-    if n <= 100 and n >= -100 and floor(n) == n then -- int from -100 to 100
-        return char(n + 101)
+    if floor(n) == n then -- int
+        if n <= 100 and n >= -27 then -- 1 byte, 7 bits of data
+            return char(n + 27)
+        elseif n <= 8191 and n >= -8192 then -- 2 bytes, 14 bits of data
+            n = n + 8192
+            return char(128 + (floor(n / 0x100) % 0x100), n % 0x100)
+        end
     end
     local sign = 0
     if n < 0.0 then
@@ -116,8 +121,10 @@ end
 -- number deserialization code also modified from https://github.com/fperrad/lua-MessagePack
 local function number_from_str(str, index)
     local b = byte(str, index)
-    if b > 0 and b < 202 then
-        return b - 101, index + 1
+    if b < 128 then
+        return b - 27, index + 1
+    elseif b < 192 then
+        return byte(str, index + 1) + 0x100 * (b - 128) - 8192, index + 2
     end
     local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
     local sign = b1 > 0x7F and -1 or 1
@@ -269,8 +276,10 @@ types.thread = function() error("Cannot serialize threads.") end
 local function deserialize_value(str, index, visited)
     local t = byte(str, index)
     if not t then return end
-    if t > 0 and t < 202 then
-        return t - 101, index + 1
+    if t < 128 then
+        return t - 27, index + 1
+    elseif t < 192 then
+        return byte(str, index + 1) + 0x100 * (t - 128) - 8192, index + 2
     elseif t == 202 then
         return nil, index + 1
     elseif t == 203 then
