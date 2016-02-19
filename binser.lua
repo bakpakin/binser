@@ -321,6 +321,8 @@ local function deserialize_value(str, index, visited)
     elseif t == 211 then
         local res, nextindex = deserialize_value(str, index + 1, visited)
         return resources_by_name[res], nextindex
+    else
+        error("Could not deserialize type byte " .. t .. ".")
     end
 end
 
