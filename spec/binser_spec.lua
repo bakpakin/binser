@@ -23,8 +23,8 @@ local binser = require "binser"
 
 local function test_ser(...)
     local serialized_data = binser.s(...)
-    local results = { binser.d(serialized_data) }
-    for i = 1, select("#", ...) do
+    local results, len = binser.d(serialized_data)
+    for i = 1, len do
         assert.are.same(select(i, ...), results[i])
     end
 end
@@ -106,7 +106,7 @@ describe("binser", function()
         binser.register(mt)
         local a = setmetatable({}, mt)
         test_ser(a, a, a)
-        local b1, b2, b3 = binser.d(binser.s(a, a, a))
+        local b1, b2, b3 = binser.dn(binser.s(a, a, a), 3)
         assert.are.same(b1, b2)
         assert.are.same(b2, b3)
         binser.unregister(mt.name)
@@ -139,7 +139,7 @@ describe("binser", function()
         local function myFn(a, b)
             return (a + b) * math.sqrt(a + b)
         end
-        local myNewFn = binser.d(binser.s(myFn))
+        local myNewFn = binser.dn(binser.s(myFn))
         assert.are.same(myNewFn(10, 9), myFn(10, 9))
     end)
 
@@ -150,7 +150,7 @@ describe("binser", function()
 
         local data = binser.s(myResource)
         myResource[2] = "This is some new data."
-        local deserdata = binser.d(data)
+        local deserdata = binser.dn(data)
         assert(myResource == deserdata)
 
         binser.unregisterResource("myResource")

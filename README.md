@@ -29,19 +29,26 @@ local str = binser.serialize(...)
 Serialize (almost) any Lua data into a Lua string. Numbers, strings, tables,
 booleans, and nil are all fully supported by default. Custom userdata and custom
 types, both identified by metatables, can also be supported by specifying a
-custom serialization function. Unserializable data should throw an error.
+custom serialization function. Unserializable data should throw an error. Aliased to `binser.s`.
 
 ```lua
-local ... = binser.deserialize(str)
+local results, len = binser.deserialize(str)
 ```
 Deserialize any string previously serialized by binser. Unrecognized data should
-throw an error.
+throw an error. Results is a list of length len. Aliased to `binser.d`.
+
+```lua
+local ... = binser.deserializeN(str, n)
+```
+Deserializes at most n values from str. The default value for n is one,
+so `binser.deserializeN(str)` will deserialize exactly one value from string, and
+ignore the rest of the string. Aliased to `binser.dn`.
 
 ### Custom types
 ```lua
 local metatable = binser.register(metatable, name, serialize, deserialize)
 ```
-Registers a custom type, identified by its metatable, to be serialzed.
+Registers a custom type, identified by its metatable, to be serialized.
 Registering types has two main purposes. First, it allows custom serialization
 and deserialization for userdata and tables that contain userdata, which can't
 otherwise be serialized in a uniform way. Second, it allows efficient
@@ -180,8 +187,8 @@ run `busted` from the command line to test.
 ## Notes
 * Serialized strings can contain unprintable and null characters.
 * Serialized data can be appended to other serialized data. (Cool :))
-* The functions `binser.serialize` and `binser.deserialize` can be shortened to
-`binser.s` and `binser.d` as a handy shortcut.
+* The functions `binser.serialize`, `binser.deserialize`, and `binser.deserializeN` can be shortened to
+`binser.s`, `binser.d`, and `binser.dn` as handy shortcuts.
 
 ## Bugs
 Pull requests are welcome, please help me squash bugs!

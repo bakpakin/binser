@@ -389,7 +389,27 @@ local function deserialize(str)
             vals[len] = val
         end
     end
-    return unpack(vals, 1, len)
+    return vals, len
+end
+
+local function deserializeN(str, n)
+    assert(type(str) == "string", "Expected string to deserialize.")
+    n = n or 1
+    assert(type(n) == "number", "Expected a number for parameter n.")
+    assert(n > 0 and floor(n) == n, "N must be a poitive integer.")
+    local vals = {}
+    local index = 1
+    local visited = {}
+    local len = 0
+    local val
+    while index and len < n do
+        val, index = deserialize_value(str, index, visited)
+        if index then
+            len = len + 1
+            vals[len] = val
+        end
+    end
+    return unpack(vals, 1, n)
 end
 
 local function readFile(path)
@@ -585,12 +605,14 @@ return {
     -- aliases
     s = serialize,
     d = deserialize,
+    dn = deserializeN,
     r = readFile,
     w = writeFile,
     a = appendFile,
 
     serialize = serialize,
     deserialize = deserialize,
+    deserializeN = deserializeN,
     readFile = readFile,
     writeFile = writeFile,
     appendFile = appendFile,
