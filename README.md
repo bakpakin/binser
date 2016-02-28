@@ -18,7 +18,7 @@ local binser = require "binser"
 
 local mydata = binser.serialize(45, {4, 8, 12, 16}, "Hello, World!")
 
-print(binser.deserialize(mydata))
+print(binser.deserializeN(mydata, 3))
 -- 45	table: 0x7fa60054bdb0	Hello, World!
 ```
 
