@@ -575,8 +575,6 @@ local function registerClass(class, name)
     name = name or class.name
     if class.__instanceDict then -- middleclass
         register(class.__instanceDict, name)
-    elseif class.__index then -- middleclass 4.x
-        register(class.__index, name)
     else -- assume 30log or similar library
         register(class, name)
     end
