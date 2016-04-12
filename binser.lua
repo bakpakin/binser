@@ -326,7 +326,9 @@ local function deserialize_value(str, index, visited)
     elseif t == 210 then
         local length, dataindex = deserialize_value(str, index + 1, visited)
         local nextindex = dataindex + length
-        return loadstring(sub(str, dataindex, nextindex - 1)), nextindex
+        local ret = loadstring(sub(str, dataindex, nextindex - 1))
+        visited[#visited + 1] = ret
+        return ret, nextindex
     elseif t == 211 then
         local res, nextindex = deserialize_value(str, index + 1, visited)
         return resources_by_name[res], nextindex

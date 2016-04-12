@@ -270,4 +270,18 @@ describe("binser", function()
         binser.unregister(mt2.name)
     end)
 
+    it("Can serialize function references", function()
+        local f = function()
+            print "hello, world!"
+        end
+        local f2 = function()
+            print "goodbye, world!"
+        end
+        local indata = {f, f, f, f, f, f, f2, f2, f2, f, f, f2, f}
+        local outdata = binser.dn(binser.s(indata), 1)
+        for i, func in ipairs(indata) do
+            assert.are.same(string.dump(func, true), string.dump(outdata[i], true))
+        end
+    end)
+
 end)
