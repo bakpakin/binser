@@ -247,4 +247,27 @@ describe("binser", function()
         binser.unregister(mt)
     end)
 
+    it("Can serialize nested registered objects", function()
+        local mt1 = {
+            name = "MyCoolType1",
+            _serialize = function(x) return x.data1 end,
+            _deserialize = function(x) return { data1 = x } end
+        }
+        local mt2 = {
+            name = "MyCoolType2",
+            _serialize = function(x) return x.data2 end,
+            _deserialize = function(x) return { data2 = x } end
+        }
+        binser.register(mt1)
+        binser.register(mt2)
+        local instance = setmetatable({
+            data1 = setmetatable({
+                data2 = 11
+            }, mt2)
+        }, mt1)
+        test_ser(instance)
+        binser.unregister(mt1.name)
+        binser.unregister(mt2.name)
+    end)
+
 end)
