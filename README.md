@@ -1,6 +1,6 @@
 # binser - Customizable Lua Serializer
 
-[![Build Status](https://travis-ci.org/bakpakin/binser.png?branch=master)](https://travis-ci.org/bakpakin/binser)
+[![Build Status](https://travis-ci.org/bakpakin/binser.svg?branch=master)](https://travis-ci.org/bakpakin/binser)
 
 There already exists a number of serializers for Lua, each with their own uses,
 limitations, and quirks. binser is yet another robust, pure Lua serializer that
