@@ -156,7 +156,7 @@ binser.appendFile(filepath, ...)
 Same as writing to a file, but doesn't overwrite the old file.
 
 ```lua
-local ... = binser.readFile(filepath)
+local results, len = binser.readFile(filepath)
 ```
 Reads and deserializes a file.
 
