@@ -1,7 +1,8 @@
 package = "binser"
 version = "0.0-3"
 source = {
-   url = "git://github.com/bakpakin/binser"
+   url = "git://github.com/bakpakin/binser",
+   tag = version
 }
 description = {
    summary = "Customizable Lua Serializer",

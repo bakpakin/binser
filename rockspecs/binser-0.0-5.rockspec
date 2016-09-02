@@ -1,5 +1,5 @@
 package = "binser"
-version = "0.0-1"
+version = "0.0-5"
 source = {
    url = "git://github.com/bakpakin/binser",
    tag = version
