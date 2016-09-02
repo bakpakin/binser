@@ -38,8 +38,20 @@ local sub = string.sub
 local dump = string.dump
 local floor = math.floor
 local frexp = math.frexp
-local ldexp = math.ldexp
+local pow = math.pow
 local unpack = unpack or table.unpack
+
+-- Lua 5.3 frexp polyfill
+-- From https://github.com/excessive/cpml/blob/master/modules/utils.lua
+if not frexp then
+    local log, abs, floor = math.log, math.abs, math.floor
+    local log2 = log(2)
+    frexp = function(x)
+        if x == 0 then return 0, 0 end
+        local e = floor(log(abs(x)) / log2 + 1)
+        return x / 2 ^ e, e
+    end
+end
 
 -- NIL = 202
 -- FLOAT = 203
@@ -101,10 +113,10 @@ local function number_to_str(n)
     end
     e = e + 0x3FE
     if e < 1 then -- denormalized numbers
-        m = m * ldexp(0.5, 53 + e)
+        m = m * pow(2, 52 + e)
         e = 0
     else
-        m = (m * 2 - 1) * ldexp(0.5, 53)
+        m = (m * 2 - 1) * pow(2, 52)
     end
     return char(203,
                 sign + floor(e / 0x10),
@@ -135,7 +147,7 @@ local function number_from_str(str, index)
         if m == 0 then
             n = sign * 0.0
         else
-            n = sign * ldexp(m / ldexp(0.5, 53), -1022)
+            n = sign * (m / pow(2, 52)) * pow(2, -1022)
         end
     elseif e == 0x7FF then
         if m == 0 then
@@ -144,7 +156,7 @@ local function number_from_str(str, index)
             n = 0.0/0.0
         end
     else
-        n = sign * ldexp(1.0 + m / ldexp(0.5, 53), e - 0x3FF)
+        n = sign * (1.0 + m / pow(2, 52)) * pow(2, e - 0x3FF)
     end
     return n, index + 9
 end
