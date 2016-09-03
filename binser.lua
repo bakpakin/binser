@@ -40,7 +40,6 @@ local floor = math.floor
 local frexp = math.frexp
 local pow = math.pow
 local unpack = unpack or table.unpack
-local bxor
 
 -- Lua 5.3 frexp polyfill
 -- From https://github.com/excessive/cpml/blob/master/modules/utils.lua
@@ -95,8 +94,25 @@ local bigIntSupport = false
 local isInteger
 if math.type then -- Detect Lua 5.3
     local mtype = math.type
-    bigIntSupport = true
-    bxor = bit32.bxor
+    bigIntSupport = loadstring[[
+    local char = string.char
+    return function(n)
+        local nn = n < 0 and -(n + 1) or n
+        local b1 = nn // 0x100000000000000
+        local b2 = nn // 0x1000000000000 % 0x100
+        local b3 = nn // 0x10000000000 % 0x100
+        local b4 = nn // 0x100000000 % 0x100
+        local b5 = nn // 0x1000000 % 0x100
+        local b6 = nn // 0x10000 % 0x100
+        local b7 = nn // 0x100 % 0x100
+        local b8 = nn % 0x100
+        if n < 0 then
+            b1, b2, b3, b4 = 0xFF - b1, 0xFF - b2, 0xFF - b3, 0xFF - b4
+            b5, b6, b7, b8 = 0xFF - b5, 0xFF - b6, 0xFF - b7, 0xFF - b8
+        end
+        print (n, b1, b2, b3, b4, b5, b6, b7, b8)
+        return char(212, b1, b2, b3, b4, b5, b6, b7, b8)
+    end]]()
     isInteger = function(x)
         return mtype(x) == 'integer'
     end
@@ -117,21 +133,7 @@ local function number_to_str(n)
             n = n + 8192
             return char(128 + (floor(n / 0x100) % 0x100), n % 0x100)
         elseif bigIntSupport then
-            local b1, b2, b3, b4, b5, b6, b7, b8
-            local nn = n < 0 and -(n + 1) or n
-            b1 = floor(nn / 0x100000000000000)
-            b2 = floor(nn / 0x1000000000000) % 0x100
-            b3 = floor(nn / 0x10000000000) % 0x100
-            b4 = floor(nn / 0x100000000) % 0x100
-            b5 = floor(nn / 0x1000000) % 0x100
-            b6 = floor(nn / 0x10000) % 0x100
-            b7 = floor(nn / 0x100) % 0x100
-            b8 = nn % 0x100
-            if n < 0 then
-                b1, b2, b3, b4 = bxor(b1, 0xFF), bxor(b2, 0xFF), bxor(b3, 0xFF), bxor(b4, 0xFF)
-                b5, b6, b7, b8 = bxor(b5, 0xFF), bxor(b6, 0xFF), bxor(b7, 0xFF), bxor(b8, 0xFF)
-            end
-            return char(212, b1, b2, b3, b4, b5, b6, b7, b8)
+            return bigIntSupport(n)
         end
     end
     local sign = 0
@@ -178,13 +180,14 @@ local function number_from_str(str, index)
     end
     local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
     if b == 212 then
-        if b1 >= 128 then -- negative
-            b1, b2, b3, b4 = bxor(b1, 0xFF), bxor(b2, 0xFF), bxor(b3, 0xFF), bxor(b4, 0xFF)
-            b5, b6, b7, b8 = bxor(b5, 0xFF), bxor(b6, 0xFF), bxor(b7, 0xFF), bxor(b8, 0xFF)
+        local flip = b1 > 128
+        if flip then -- negative
+            b1, b2, b3, b4 = 0xFF - b1, 0xFF - b2, 0xFF - b3, 0xFF - b4
+            b5, b6, b7, b8 = 0xFF - b5, 0xFF - b6, 0xFF - b7, 0xFF - b8
         end
         local n = ((((((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
-        if b1 >= 128 then
-            return -n - 1, index + 9
+        if flip then
+            return (-n) - 1, index + 9
         else
             return n, index + 9
         end
