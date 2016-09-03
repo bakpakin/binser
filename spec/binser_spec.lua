@@ -284,4 +284,15 @@ describe("binser", function()
         end
     end)
 
+    -- 5.3 only
+    if math.type then
+        it("Can serialize large integers", function()
+            test_ser(10000, math.maxinteger, math.maxinteger - 120)
+        end)
+
+        it("Can serialize small integers", function()
+            test_ser(-10000, math.mininteger, math.mininteger + 201)
+        end)
+    end
+
 end)

@@ -40,6 +40,7 @@ local floor = math.floor
 local frexp = math.frexp
 local pow = math.pow
 local unpack = unpack or table.unpack
+local bxor
 
 -- Lua 5.3 frexp polyfill
 -- From https://github.com/excessive/cpml/blob/master/modules/utils.lua
@@ -90,16 +91,47 @@ local function type_check(x, tp, name)
         format("Expected parameter %q to be of type %q.", name, tp))
 end
 
+local bigIntSupport = false
+local isInteger
+if math.type then -- Detect Lua 5.3
+    local mtype = math.type
+    bigIntSupport = true
+    bxor = bit32.bxor
+    isInteger = function(x)
+        return mtype(x) == 'integer'
+    end
+else
+    isInteger = function(x)
+        return floor(x) == x
+    end
+end
+
 -- Copyright (C) 2012-2015 Francois Perrad.
 -- number serialization code modified from https://github.com/fperrad/lua-MessagePack
--- Encode a number as a big-endian ieee-754 double (or a small integer)
+-- Encode a number as a big-endian ieee-754 double, big-endian signed 64 bit integer, or a small integer
 local function number_to_str(n)
-    if floor(n) == n then -- int
+    if isInteger(n) then -- int
         if n <= 100 and n >= -27 then -- 1 byte, 7 bits of data
             return char(n + 27)
         elseif n <= 8191 and n >= -8192 then -- 2 bytes, 14 bits of data
             n = n + 8192
             return char(128 + (floor(n / 0x100) % 0x100), n % 0x100)
+        elseif bigIntSupport then
+            local b1, b2, b3, b4, b5, b6, b7, b8
+            local nn = n < 0 and -(n + 1) or n
+            b1 = floor(nn / 0x100000000000000)
+            b2 = floor(nn / 0x1000000000000) % 0x100
+            b3 = floor(nn / 0x10000000000) % 0x100
+            b4 = floor(nn / 0x100000000) % 0x100
+            b5 = floor(nn / 0x1000000) % 0x100
+            b6 = floor(nn / 0x10000) % 0x100
+            b7 = floor(nn / 0x100) % 0x100
+            b8 = nn % 0x100
+            if n < 0 then
+                b1, b2, b3, b4 = bxor(b1, 0xFF), bxor(b2, 0xFF), bxor(b3, 0xFF), bxor(b4, 0xFF)
+                b5, b6, b7, b8 = bxor(b5, 0xFF), bxor(b6, 0xFF), bxor(b7, 0xFF), bxor(b8, 0xFF)
+            end
+            return char(212, b1, b2, b3, b4, b5, b6, b7, b8)
         end
     end
     local sign = 0
@@ -145,6 +177,18 @@ local function number_from_str(str, index)
         return byte(str, index + 1) + 0x100 * (b - 128) - 8192, index + 2
     end
     local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
+    if b == 212 then
+        if b1 >= 128 then -- negative
+            b1, b2, b3, b4 = bxor(b1, 0xFF), bxor(b2, 0xFF), bxor(b3, 0xFF), bxor(b4, 0xFF)
+            b5, b6, b7, b8 = bxor(b5, 0xFF), bxor(b6, 0xFF), bxor(b7, 0xFF), bxor(b8, 0xFF)
+        end
+        local n = ((((((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
+        if b1 >= 128 then
+            return -n - 1, index + 9
+        else
+            return n, index + 9
+        end
+    end
     local sign = b1 > 0x7F and -1 or 1
     local e = (b1 % 0x80) * 0x10 + floor(b2 / 0x10)
     local m = ((((((b2 % 0x10) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
@@ -350,6 +394,8 @@ local function deserialize_value(str, index, visited)
     elseif t == 211 then
         local res, nextindex = deserialize_value(str, index + 1, visited)
         return resources_by_name[res], nextindex
+    elseif t == 212 then
+        return number_from_str(str, index)
     else
         error("Could not deserialize type byte " .. t .. ".")
     end
