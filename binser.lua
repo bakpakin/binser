@@ -110,7 +110,6 @@ if math.type then -- Detect Lua 5.3
             b1, b2, b3, b4 = 0xFF - b1, 0xFF - b2, 0xFF - b3, 0xFF - b4
             b5, b6, b7, b8 = 0xFF - b5, 0xFF - b6, 0xFF - b7, 0xFF - b8
         end
-        print (n, b1, b2, b3, b4, b5, b6, b7, b8)
         return char(212, b1, b2, b3, b4, b5, b6, b7, b8)
     end]]()
     isInteger = function(x)
