@@ -53,6 +53,11 @@ if not frexp then
     end
 end
 
+-- 5.3 pow polyfill
+if not pow then
+    pow = loadstring('return function(a, b) return a ^ b end')()
+end
+
 -- NIL = 202
 -- FLOAT = 203
 -- TRUE = 204
@@ -63,6 +68,7 @@ end
 -- CONSTRUCTOR = 209
 -- FUNCTION = 210
 -- RESOURCE = 211
+-- INT64 = 212
 
 local mts = {}
 local ids = {}
