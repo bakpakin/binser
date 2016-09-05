@@ -179,7 +179,7 @@ local function number_from_str(str, index)
     end
     local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
     if b == 212 then
-        local flip = b1 > 128
+        local flip = b1 >= 128
         if flip then -- negative
             b1, b2, b3, b4 = 0xFF - b1, 0xFF - b2, 0xFF - b3, 0xFF - b4
             b5, b6, b7, b8 = 0xFF - b5, 0xFF - b6, 0xFF - b7, 0xFF - b8
