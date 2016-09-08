@@ -38,7 +38,6 @@ local sub = string.sub
 local dump = string.dump
 local floor = math.floor
 local frexp = math.frexp
-local pow = math.pow
 local unpack = unpack or table.unpack
 
 -- Lua 5.3 frexp polyfill
@@ -51,11 +50,6 @@ if not frexp then
         local e = floor(log(abs(x)) / log2 + 1)
         return x / 2 ^ e, e
     end
-end
-
--- 5.3 pow polyfill
-if not pow then
-    pow = loadstring('return function(a, b) return a ^ b end')()
 end
 
 -- NIL = 202
@@ -152,10 +146,10 @@ local function number_to_str(n)
     end
     e = e + 0x3FE
     if e < 1 then -- denormalized numbers
-        m = m * pow(2, 52 + e)
+        m = m * 2 ^ (52 + e)
         e = 0
     else
-        m = (m * 2 - 1) * pow(2, 52)
+        m = (m * 2 - 1) * 2 ^ 52
     end
     return char(203,
                 sign + floor(e / 0x10),
@@ -199,7 +193,7 @@ local function number_from_str(str, index)
         if m == 0 then
             n = sign * 0.0
         else
-            n = sign * (m / pow(2, 52)) * pow(2, -1022)
+            n = sign * (m / 2 ^ 52) * 2 ^ -1022
         end
     elseif e == 0x7FF then
         if m == 0 then
@@ -208,7 +202,7 @@ local function number_from_str(str, index)
             n = 0.0/0.0
         end
     else
-        n = sign * (1.0 + m / pow(2, 52)) * pow(2, e - 0x3FF)
+        n = sign * (1.0 + m / 2 ^ 52) * 2 ^ (e - 0x3FF)
     end
     return n, index + 9
 end
