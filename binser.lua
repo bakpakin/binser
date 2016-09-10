@@ -437,10 +437,10 @@ local function appendFile(path, ...)
     return serialize_to_file(path, "ab", ...)
 end
 
-local function deserialize(str)
+local function deserialize(str, index)
     assert(type(str) == "string", "Expected string to deserialize.")
     local vals = {}
-    local index = 1
+    index = index or 1
     local visited = {}
     local len = 0
     local val
@@ -454,13 +454,13 @@ local function deserialize(str)
     return vals, len
 end
 
-local function deserializeN(str, n)
+local function deserializeN(str, n, index)
     assert(type(str) == "string", "Expected string to deserialize.")
     n = n or 1
     assert(type(n) == "number", "Expected a number for parameter n.")
     assert(n > 0 and floor(n) == n, "N must be a poitive integer.")
     local vals = {}
-    local index = 1
+    index = index or 1
     local visited = {}
     local len = 0
     local val
@@ -471,7 +471,8 @@ local function deserializeN(str, n)
             vals[len] = val
         end
     end
-    return unpack(vals, 1, n)
+    vals[len + 1] = index
+    return unpack(vals, 1, n + 1)
 end
 
 local function readFile(path)
