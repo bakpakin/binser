@@ -32,14 +32,14 @@ types, both identified by metatables, can also be supported by specifying a
 custom serialization function. Unserializable data should throw an error. Aliased to `binser.s`.
 
 ```lua
-local results, len = binser.deserialize(str, [index])
+local results, len = binser.deserialize(str[, index])
 ```
 Deserialize any string previously serialized by binser. Can optionally start at 
 an index in the string (to drop leading characters). Index is 1 by default. Unrecognized data should
 throw an error. Results is a list of length len. Aliased to `binser.d`.
 
 ```lua
-local ... = binser.deserializeN(str, n, [index])
+local ... = binser.deserializeN(str, n[, index])
 ```
 Deserializes at most n values from str. The default value for n is one,
 so `binser.deserializeN(str)` will deserialize exactly one value from string, and
