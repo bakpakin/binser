@@ -46,6 +46,10 @@ describe("binser", function()
         "#|||||###|#|#|#!@|#|@|!||2121|2", "", "\000\x34\x67\x56", "\000\255" )
     end)
 
+    it("Serializes the string 'next'", function()
+        test_ser("next", {"next", "next", "next"})
+    end)
+
     it("Serializes booleans", function()
         test_ser(true, false, false, true)
     end)

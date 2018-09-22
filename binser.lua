@@ -40,6 +40,10 @@ local floor = math.floor
 local frexp = math.frexp
 local unpack = unpack or table.unpack
 
+-- unique table key for getting next value
+local NEXT = {}
+local CTORSTACK = {}
+
 -- Lua 5.3 frexp polyfill
 -- From https://github.com/excessive/cpml/blob/master/modules/utils.lua
 if not frexp then
@@ -227,8 +231,8 @@ function types.string(x, visited, accum)
         accum[alen + 1] = "\208"
         accum[alen + 2] = number_to_str(visited[x])
     else
-        visited[x] = visited.next
-        visited.next =  visited.next + 1
+        visited[x] = visited[NEXT]
+        visited[NEXT] =  visited[NEXT] + 1
         accum[alen + 1] = "\206"
         accum[alen + 2] = number_to_str(#x)
         accum[alen + 3] = x
@@ -245,10 +249,11 @@ local function check_custom_type(x, visited, accum)
     local mt = getmetatable(x)
     local id = mt and ids[mt]
     if id then
-        if x == visited.temp then
+        local constructing = visited[CTORSTACK]
+        if constructing[x] then
             error("Infinite loop in constructor.")
         end
-        visited.temp = x
+        constructing[x] = true
         accum[#accum + 1] = "\209"
         types[type(id)](id, visited, accum)
         local args, len = pack(serializers[id](x))
@@ -257,8 +262,10 @@ local function check_custom_type(x, visited, accum)
             local arg = args[i]
             types[type(arg)](arg, visited, accum)
         end
-        visited[x] = visited.next
-        visited.next = visited.next + 1
+        visited[x] = visited[NEXT]
+        visited[NEXT] = visited[NEXT] + 1
+        -- We finished constructing
+        constructing[x] = nil
         return true
     end
 end
@@ -279,8 +286,8 @@ function types.table(x, visited, accum)
         accum[#accum + 1] = number_to_str(visited[x])
     else
         if check_custom_type(x, visited, accum) then return end
-        visited[x] = visited.next
-        visited.next =  visited.next + 1
+        visited[x] = visited[NEXT]
+        visited[NEXT] =  visited[NEXT] + 1
         local xlen = #x
         accum[#accum + 1] = "\207"
         accum[#accum + 1] = number_to_str(xlen)
@@ -310,8 +317,8 @@ types["function"] = function(x, visited, accum)
         accum[#accum + 1] = number_to_str(visited[x])
     else
         if check_custom_type(x, visited, accum) then return end
-        visited[x] = visited.next
-        visited.next =  visited.next + 1
+        visited[x] = visited[NEXT]
+        visited[NEXT] =  visited[NEXT] + 1
         local str = dump(x)
         accum[#accum + 1] = "\210"
         accum[#accum + 1] = number_to_str(#str)
@@ -398,7 +405,7 @@ local function deserialize_value(str, index, visited)
 end
 
 local function serialize(...)
-    local visited = {next = 1}
+    local visited = {[NEXT] = 1, [CTORSTACK] = {}}
     local accum = {}
     for i = 1, select("#", ...) do
         local x = select(i, ...)
@@ -418,7 +425,7 @@ end
 local function serialize_to_file(path, mode, ...)
     local file, err = io.open(path, mode)
     assert(file, err)
-    local visited = {next = 1}
+    local visited = {[NEXT] = 1, [CTORSTACK] = {}}
     local accum = make_file_writer(file)
     for i = 1, select("#", ...) do
         local x = select(i, ...)
