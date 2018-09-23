@@ -248,6 +248,8 @@ local function check_custom_type(x, visited, accum)
         if x == visited.temp then
             error("Infinite loop in constructor.")
         end
+        visited[x] = visited.next
+        visited.next = visited.next + 1
         visited.temp = x
         accum[#accum + 1] = "\209"
         types[type(id)](id, visited, accum)
@@ -257,8 +259,6 @@ local function check_custom_type(x, visited, accum)
             local arg = args[i]
             types[type(arg)](arg, visited, accum)
         end
-        visited[x] = visited.next
-        visited.next = visited.next + 1
         return true
     end
 end
@@ -371,6 +371,8 @@ local function deserialize_value(str, index, visited)
         local ref, nextindex = number_from_str(str, index + 1)
         return visited[ref], nextindex
     elseif t == 209 then
+        local ret = {}
+        visited[#visited + 1] = ret
         local count
         local name, nextindex = deserialize_value(str, index + 1, visited)
         count, nextindex = number_from_str(str, nextindex)
@@ -378,8 +380,7 @@ local function deserialize_value(str, index, visited)
         for i = 1, count do
             args[i], nextindex = deserialize_value(str, nextindex, visited)
         end
-        local ret = deserializers[name](unpack(args))
-        visited[#visited + 1] = ret
+        deserializers[name](ret, unpack(args))
         return ret, nextindex
     elseif t == 210 then
         local length, dataindex = deserialize_value(str, index + 1, visited)
@@ -484,8 +485,7 @@ local function readFile(path)
 end
 
 local function default_deserialize(metatable)
-    return function(...)
-        local ret = {}
+    return function(ret, ...)
         for i = 1, select("#", ...), 2 do
             ret[select(i, ...)] = select(i + 1, ...)
         end
