@@ -598,21 +598,24 @@ local function template_serializer_and_deserializer(metatable, template)
 end
 
 local function register(metatable, name, serialize, deserialize)
-    name = name or metatable.name
-    serialize = serialize or metatable._serialize
-    deserialize = deserialize or metatable._deserialize
-    if not serialize then
-        if metatable._template then
-            local t = normalize_template(metatable._template)
-            serialize, deserialize = template_serializer_and_deserializer(metatable, t)
-        elseif not deserialize then
-            serialize = default_serialize
-            deserialize = default_deserialize(metatable)
-        else
-            serialize = metatable
+    if type(metatable) == "table" then
+        name = name or metatable.name
+        serialize = serialize or metatable._serialize
+        deserialize = deserialize or metatable._deserialize
+        if not serialize then
+            if metatable._template then
+                local t = normalize_template(metatable._template)
+                serialize, deserialize = template_serializer_and_deserializer(metatable, t)
+            elseif not deserialize then
+                serialize = default_serialize
+                deserialize = default_deserialize(metatable)
+            else
+                serialize = metatable
+            end
         end
+    elseif type(metatable) == "string" then
+        name = name or metatable
     end
-    type_check(metatable, "table", "metatable")
     type_check(name, "string", "name")
     type_check(serialize, "function", "serialize")
     type_check(deserialize, "function", "deserialize")
@@ -633,7 +636,6 @@ local function unregister(item)
         name, metatable = ids[item], item
     end
     type_check(name, "string", "name")
-    type_check(metatable, "table", "metatable")
     mts[name] = nil
     ids[metatable] = nil
     serializers[name] = nil

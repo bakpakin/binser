@@ -29,6 +29,25 @@ local function test_ser(...)
     end
 end
 
+local function test_locked_metatable(mtoverride)
+    local regname    = "MyCoolType"
+    local mt = { __metatable = mtoverride }
+    local function custser(obj)
+        return obj.a
+    end
+    local function custdser(data)
+        return { a = data, tested = true }
+    end
+    finally(function() binser.unregister(regname) end)
+    binser.register(mtoverride, regname, custser, custdser)
+    local src = setmetatable({ a = "x" }, mt)
+    local serialized_data = binser.s(src)
+    local results, len = binser.d(serialized_data)
+    assert(len == 1)
+    src.tested = true
+    assert.are.same(src, results[1])
+end
+
 describe("binser", function()
 
     it("Serializes numbers", function()
@@ -106,6 +125,18 @@ describe("binser", function()
             c = "c"
         }, mt))
         binser.unregister(mt.name)
+    end)
+
+    it("Serializes custom type with locked metatable 1", function()
+        test_locked_metatable("MyCoolType_MT")
+    end)
+
+    it("Serializes custom type with locked metatable 2", function()
+        test_locked_metatable("MyCoolType")
+    end)
+
+    it("Serializes custom type with locked metatable 3", function()
+        test_locked_metatable(function() end) -- strange but possible
     end)
 
     it("Serializes custom type references", function()
