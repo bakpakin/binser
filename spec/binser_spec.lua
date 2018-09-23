@@ -48,6 +48,11 @@ describe("binser", function()
 
     it("Serializes the string 'next'", function()
         test_ser("next", {"next", "next", "next"})
+        local atab = {}
+        test_ser("next", "nextnext", {"next", "next", "next", atab, atab})
+        local serialized_data = binser.s({"next", "next", atab, atab})
+        local testout = binser.d(serialized_data)[1]
+        assert(testout[3] == testout[4])
     end)
 
     it("Serializes booleans", function()
