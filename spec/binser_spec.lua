@@ -334,5 +334,30 @@ describe("binser", function()
             test_ser(-10000, math.mininteger, math.mininteger + 201)
         end)
     end
+    
+    it("Use independent binsers", function()
+        local binsers = { binser, binser.newbinser(), 
+                                  binser.newbinser() }
+        local mt = {}
+        for i = 1, #binsers do
+            local function custser(obj)
+                return obj.a, i
+            end
+            local function custdser(data, j)
+                assert(j == i)
+                return { a = data, tested = i }
+            end
+            binsers[i].register(mt, "MyCoolType", custser, custdser)
+            finally(function() binsers[i].unregister("MyCoolType") end)
+        end
+        local src = setmetatable({ a = "x" }, mt)
+        for i = 1, #binsers do
+            local serialized_data = binsers[i].s(src)
+            local results, len = binsers[i].d(serialized_data)
+            assert(len == 1)
+            src.tested = i
+            assert.are.same(src, results[1])
+        end
+    end)
 
 end)
