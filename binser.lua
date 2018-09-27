@@ -40,10 +40,6 @@ local floor = math.floor
 local frexp = math.frexp
 local unpack = unpack or table.unpack
 
--- unique table key for getting next value
-local NEXT = {}
-local CTORSTACK = {}
-
 -- Lua 5.3 frexp polyfill
 -- From https://github.com/excessive/cpml/blob/master/modules/utils.lua
 if not frexp then
@@ -55,25 +51,6 @@ if not frexp then
         return x / 2 ^ e, e
     end
 end
-
--- NIL = 202
--- FLOAT = 203
--- TRUE = 204
--- FALSE = 205
--- STRING = 206
--- TABLE = 207
--- REFERENCE = 208
--- CONSTRUCTOR = 209
--- FUNCTION = 210
--- RESOURCE = 211
--- INT64 = 212
-
-local mts = {}
-local ids = {}
-local serializers = {}
-local deserializers = {}
-local resources = {}
-local resources_by_name = {}
 
 local function pack(...)
     return {...}, select("#", ...)
@@ -211,6 +188,28 @@ local function number_from_str(str, index)
     return n, index + 9
 end
 
+-- unique table key for getting next value
+local NEXT = {}
+local CTORSTACK = {}
+
+-- NIL = 202
+-- FLOAT = 203
+-- TRUE = 204
+-- FALSE = 205
+-- STRING = 206
+-- TABLE = 207
+-- REFERENCE = 208
+-- CONSTRUCTOR = 209
+-- FUNCTION = 210
+-- RESOURCE = 211
+-- INT64 = 212
+
+local mts = {}
+local ids = {}
+local serializers = {}
+local deserializers = {}
+local resources = {}
+local resources_by_name = {}
 local types = {}
 
 types["nil"] = function(x, visited, accum)
