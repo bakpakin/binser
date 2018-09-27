@@ -40,10 +40,6 @@ local floor = math.floor
 local frexp = math.frexp
 local unpack = unpack or table.unpack
 
--- unique table key for getting next value
-local NEXT = {}
-local CTORSTACK = {}
-
 -- Lua 5.3 frexp polyfill
 -- From https://github.com/excessive/cpml/blob/master/modules/utils.lua
 if not frexp then
@@ -55,25 +51,6 @@ if not frexp then
         return x / 2 ^ e, e
     end
 end
-
--- NIL = 202
--- FLOAT = 203
--- TRUE = 204
--- FALSE = 205
--- STRING = 206
--- TABLE = 207
--- REFERENCE = 208
--- CONSTRUCTOR = 209
--- FUNCTION = 210
--- RESOURCE = 211
--- INT64 = 212
-
-local mts = {}
-local ids = {}
-local serializers = {}
-local deserializers = {}
-local resources = {}
-local resources_by_name = {}
 
 local function pack(...)
     return {...}, select("#", ...)
@@ -211,486 +188,516 @@ local function number_from_str(str, index)
     return n, index + 9
 end
 
-local types = {}
 
-types["nil"] = function(x, visited, accum)
-    accum[#accum + 1] = "\202"
-end
-
-function types.number(x, visited, accum)
-    accum[#accum + 1] = number_to_str(x)
-end
-
-function types.boolean(x, visited, accum)
-    accum[#accum + 1] = x and "\204" or "\205"
-end
-
-function types.string(x, visited, accum)
-    local alen = #accum
-    if visited[x] then
-        accum[alen + 1] = "\208"
-        accum[alen + 2] = number_to_str(visited[x])
-    else
-        visited[x] = visited[NEXT]
-        visited[NEXT] =  visited[NEXT] + 1
-        accum[alen + 1] = "\206"
-        accum[alen + 2] = number_to_str(#x)
-        accum[alen + 3] = x
+local function newbinser()
+    
+    -- unique table key for getting next value
+    local NEXT = {}
+    local CTORSTACK = {}
+    
+    -- NIL = 202
+    -- FLOAT = 203
+    -- TRUE = 204
+    -- FALSE = 205
+    -- STRING = 206
+    -- TABLE = 207
+    -- REFERENCE = 208
+    -- CONSTRUCTOR = 209
+    -- FUNCTION = 210
+    -- RESOURCE = 211
+    -- INT64 = 212
+    
+    local mts = {}
+    local ids = {}
+    local serializers = {}
+    local deserializers = {}
+    local resources = {}
+    local resources_by_name = {}
+    local types = {}
+    
+    types["nil"] = function(x, visited, accum)
+        accum[#accum + 1] = "\202"
     end
-end
-
-local function check_custom_type(x, visited, accum)
-    local res = resources[x]
-    if res then
-        accum[#accum + 1] = "\211"
-        types[type(res)](res, visited, accum)
-        return true
+    
+    function types.number(x, visited, accum)
+        accum[#accum + 1] = number_to_str(x)
     end
-    local mt = getmetatable(x)
-    local id = mt and ids[mt]
-    if id then
-        local constructing = visited[CTORSTACK]
-        if constructing[x] then
-            error("Infinite loop in constructor.")
+    
+    function types.boolean(x, visited, accum)
+        accum[#accum + 1] = x and "\204" or "\205"
+    end
+    
+    function types.string(x, visited, accum)
+        local alen = #accum
+        if visited[x] then
+            accum[alen + 1] = "\208"
+            accum[alen + 2] = number_to_str(visited[x])
+        else
+            visited[x] = visited[NEXT]
+            visited[NEXT] =  visited[NEXT] + 1
+            accum[alen + 1] = "\206"
+            accum[alen + 2] = number_to_str(#x)
+            accum[alen + 3] = x
         end
-        constructing[x] = true
-        accum[#accum + 1] = "\209"
-        types[type(id)](id, visited, accum)
-        local args, len = pack(serializers[id](x))
-        accum[#accum + 1] = number_to_str(len)
-        for i = 1, len do
-            local arg = args[i]
-            types[type(arg)](arg, visited, accum)
-        end
-        visited[x] = visited[NEXT]
-        visited[NEXT] = visited[NEXT] + 1
-        -- We finished constructing
-        constructing[x] = nil
-        return true
     end
-end
-
-function types.userdata(x, visited, accum)
-    if visited[x] then
-        accum[#accum + 1] = "\208"
-        accum[#accum + 1] = number_to_str(visited[x])
-    else
-        if check_custom_type(x, visited, accum) then return end
-        error("Cannot serialize this userdata.")
-    end
-end
-
-function types.table(x, visited, accum)
-    if visited[x] then
-        accum[#accum + 1] = "\208"
-        accum[#accum + 1] = number_to_str(visited[x])
-    else
-        if check_custom_type(x, visited, accum) then return end
-        visited[x] = visited[NEXT]
-        visited[NEXT] =  visited[NEXT] + 1
-        local xlen = #x
-        accum[#accum + 1] = "\207"
-        accum[#accum + 1] = number_to_str(xlen)
-        for i = 1, xlen do
-            local v = x[i]
-            types[type(v)](v, visited, accum)
+    
+    local function check_custom_type(x, visited, accum)
+        local res = resources[x]
+        if res then
+            accum[#accum + 1] = "\211"
+            types[type(res)](res, visited, accum)
+            return true
         end
-        local key_count = 0
-        for k in pairs(x) do
-            if not_array_index(k, xlen) then
-                key_count = key_count + 1
+        local mt = getmetatable(x)
+        local id = mt and ids[mt]
+        if id then
+            local constructing = visited[CTORSTACK]
+            if constructing[x] then
+                error("Infinite loop in constructor.")
             end
+            constructing[x] = true
+            accum[#accum + 1] = "\209"
+            types[type(id)](id, visited, accum)
+            local args, len = pack(serializers[id](x))
+            accum[#accum + 1] = number_to_str(len)
+            for i = 1, len do
+                local arg = args[i]
+                types[type(arg)](arg, visited, accum)
+            end
+            visited[x] = visited[NEXT]
+            visited[NEXT] = visited[NEXT] + 1
+            -- We finished constructing
+            constructing[x] = nil
+            return true
         end
-        accum[#accum + 1] = number_to_str(key_count)
-        for k, v in pairs(x) do
-            if not_array_index(k, xlen) then
-                types[type(k)](k, visited, accum)
+    end
+    
+    function types.userdata(x, visited, accum)
+        if visited[x] then
+            accum[#accum + 1] = "\208"
+            accum[#accum + 1] = number_to_str(visited[x])
+        else
+            if check_custom_type(x, visited, accum) then return end
+            error("Cannot serialize this userdata.")
+        end
+    end
+    
+    function types.table(x, visited, accum)
+        if visited[x] then
+            accum[#accum + 1] = "\208"
+            accum[#accum + 1] = number_to_str(visited[x])
+        else
+            if check_custom_type(x, visited, accum) then return end
+            visited[x] = visited[NEXT]
+            visited[NEXT] =  visited[NEXT] + 1
+            local xlen = #x
+            accum[#accum + 1] = "\207"
+            accum[#accum + 1] = number_to_str(xlen)
+            for i = 1, xlen do
+                local v = x[i]
                 types[type(v)](v, visited, accum)
             end
-        end
-    end
-end
-
-types["function"] = function(x, visited, accum)
-    if visited[x] then
-        accum[#accum + 1] = "\208"
-        accum[#accum + 1] = number_to_str(visited[x])
-    else
-        if check_custom_type(x, visited, accum) then return end
-        visited[x] = visited[NEXT]
-        visited[NEXT] =  visited[NEXT] + 1
-        local str = dump(x)
-        accum[#accum + 1] = "\210"
-        accum[#accum + 1] = number_to_str(#str)
-        accum[#accum + 1] = str
-    end
-end
-
-types.cdata = function(x, visited, accum)
-    if visited[x] then
-        accum[#accum + 1] = "\208"
-        accum[#accum + 1] = number_to_str(visited[x])
-    else
-        if check_custom_type(x, visited, #accum) then return end
-        error("Cannot serialize this cdata.")
-    end
-end
-
-types.thread = function() error("Cannot serialize threads.") end
-
-local function deserialize_value(str, index, visited)
-    local t = byte(str, index)
-    if not t then return end
-    if t < 128 then
-        return t - 27, index + 1
-    elseif t < 192 then
-        return byte(str, index + 1) + 0x100 * (t - 128) - 8192, index + 2
-    elseif t == 202 then
-        return nil, index + 1
-    elseif t == 203 then
-        return number_from_str(str, index)
-    elseif t == 204 then
-        return true, index + 1
-    elseif t == 205 then
-        return false, index + 1
-    elseif t == 206 then
-        local length, dataindex = deserialize_value(str, index + 1, visited)
-        local nextindex = dataindex + length
-        local substr = sub(str, dataindex, nextindex - 1)
-        visited[#visited + 1] = substr
-        return substr, nextindex
-    elseif t == 207 then
-        local count, nextindex = number_from_str(str, index + 1)
-        local ret = {}
-        visited[#visited + 1] = ret
-        for i = 1, count do
-            ret[i], nextindex = deserialize_value(str, nextindex, visited)
-        end
-        count, nextindex = number_from_str(str, nextindex)
-        for i = 1, count do
-            local k, v
-            k, nextindex = deserialize_value(str, nextindex, visited)
-            v, nextindex = deserialize_value(str, nextindex, visited)
-            ret[k] = v
-        end
-        return ret, nextindex
-    elseif t == 208 then
-        local ref, nextindex = number_from_str(str, index + 1)
-        return visited[ref], nextindex
-    elseif t == 209 then
-        local count
-        local name, nextindex = deserialize_value(str, index + 1, visited)
-        count, nextindex = number_from_str(str, nextindex)
-        local args = {}
-        for i = 1, count do
-            args[i], nextindex = deserialize_value(str, nextindex, visited)
-        end
-        local ret = deserializers[name](unpack(args))
-        visited[#visited + 1] = ret
-        return ret, nextindex
-    elseif t == 210 then
-        local length, dataindex = deserialize_value(str, index + 1, visited)
-        local nextindex = dataindex + length
-        local ret = loadstring(sub(str, dataindex, nextindex - 1))
-        visited[#visited + 1] = ret
-        return ret, nextindex
-    elseif t == 211 then
-        local res, nextindex = deserialize_value(str, index + 1, visited)
-        return resources_by_name[res], nextindex
-    elseif t == 212 then
-        return number_from_str(str, index)
-    else
-        error("Could not deserialize type byte " .. t .. ".")
-    end
-end
-
-local function serialize(...)
-    local visited = {[NEXT] = 1, [CTORSTACK] = {}}
-    local accum = {}
-    for i = 1, select("#", ...) do
-        local x = select(i, ...)
-        types[type(x)](x, visited, accum)
-    end
-    return concat(accum)
-end
-
-local function make_file_writer(file)
-    return setmetatable({}, {
-        __newindex = function(_, _, v)
-            file:write(v)
-        end
-    })
-end
-
-local function serialize_to_file(path, mode, ...)
-    local file, err = io.open(path, mode)
-    assert(file, err)
-    local visited = {[NEXT] = 1, [CTORSTACK] = {}}
-    local accum = make_file_writer(file)
-    for i = 1, select("#", ...) do
-        local x = select(i, ...)
-        types[type(x)](x, visited, accum)
-    end
-    -- flush the writer
-    file:flush()
-    file:close()
-end
-
-local function writeFile(path, ...)
-    return serialize_to_file(path, "wb", ...)
-end
-
-local function appendFile(path, ...)
-    return serialize_to_file(path, "ab", ...)
-end
-
-local function deserialize(str, index)
-    assert(type(str) == "string", "Expected string to deserialize.")
-    local vals = {}
-    index = index or 1
-    local visited = {}
-    local len = 0
-    local val
-    while index do
-        val, index = deserialize_value(str, index, visited)
-        if index then
-            len = len + 1
-            vals[len] = val
-        end
-    end
-    return vals, len
-end
-
-local function deserializeN(str, n, index)
-    assert(type(str) == "string", "Expected string to deserialize.")
-    n = n or 1
-    assert(type(n) == "number", "Expected a number for parameter n.")
-    assert(n > 0 and floor(n) == n, "N must be a poitive integer.")
-    local vals = {}
-    index = index or 1
-    local visited = {}
-    local len = 0
-    local val
-    while index and len < n do
-        val, index = deserialize_value(str, index, visited)
-        if index then
-            len = len + 1
-            vals[len] = val
-        end
-    end
-    vals[len + 1] = index
-    return unpack(vals, 1, n + 1)
-end
-
-local function readFile(path)
-    local file, err = io.open(path, "rb")
-    assert(file, err)
-    local str = file:read("*all")
-    file:close()
-    return deserialize(str)
-end
-
-local function default_deserialize(metatable)
-    return function(...)
-        local ret = {}
-        for i = 1, select("#", ...), 2 do
-            ret[select(i, ...)] = select(i + 1, ...)
-        end
-        return setmetatable(ret, metatable)
-    end
-end
-
-local function default_serialize(x)
-    assert(type(x) == "table",
-        "Default serialization for custom types only works for tables.")
-    local args = {}
-    local len = 0
-    for k, v in pairs(x) do
-        args[len + 1], args[len + 2] = k, v
-        len = len + 2
-    end
-    return unpack(args, 1, len)
-end
-
--- Templating
-
-local function normalize_template(template)
-    local ret = {}
-    for i = 1, #template do
-        ret[i] = template[i]
-    end
-    local non_array_part = {}
-    -- The non-array part of the template (nested templates) have to be deterministic, so they are sorted.
-    -- This means that inherently non deterministicly sortable keys (tables, functions) should NOT be used
-    -- in templates. Looking for way around this.
-    for k in pairs(template) do
-        if not_array_index(k, #template) then
-            non_array_part[#non_array_part + 1] = k
-        end
-    end
-    table.sort(non_array_part)
-    for i = 1, #non_array_part do
-        local name = non_array_part[i]
-        ret[#ret + 1] = {name, normalize_template(template[name])}
-    end
-    return ret
-end
-
-local function templatepart_serialize(part, argaccum, x, len)
-    local extras = {}
-    local extracount = 0
-    for k, v in pairs(x) do
-        extras[k] = v
-        extracount = extracount + 1
-    end
-    for i = 1, #part do
-        extracount = extracount - 1
-        if type(part[i]) == "table" then
-            extras[part[i][1]] = nil
-            len = templatepart_serialize(part[i][2], argaccum, x[part[i][1]], len)
-        else
-            extras[part[i]] = nil
-            len = len + 1
-            argaccum[len] = x[part[i]]
-        end
-    end
-    if extracount > 0 then
-        argaccum[len + 1] = extras
-    else
-        argaccum[len + 1] = nil
-    end
-    return len + 1
-end
-
-local function templatepart_deserialize(ret, part, values, vindex)
-    for i = 1, #part do
-        local name = part[i]
-        if type(name) == "table" then
-            local newret = {}
-            ret[name[1]] = newret
-            vindex = templatepart_deserialize(newret, name[2], values, vindex)
-        else
-            ret[name] = values[vindex]
-            vindex = vindex + 1
-        end
-    end
-    local extras = values[vindex]
-    if extras then
-        for k, v in pairs(extras) do
-            ret[k] = v
-        end
-    end
-    return vindex + 1
-end
-
-local function template_serializer_and_deserializer(metatable, template)
-    return function(x)
-        argaccum = {}
-        local len = templatepart_serialize(template, argaccum, x, 0)
-        return unpack(argaccum, 1, len)
-    end, function(...)
-        local ret = {}
-        local len = select("#", ...)
-        local args = {...}
-        templatepart_deserialize(ret, template, args, 1)
-        return setmetatable(ret, metatable)
-    end
-end
-
-local function register(metatable, name, serialize, deserialize)
-    if type(metatable) == "table" then
-        name = name or metatable.name
-        serialize = serialize or metatable._serialize
-        deserialize = deserialize or metatable._deserialize
-        if not serialize then
-            if metatable._template then
-                local t = normalize_template(metatable._template)
-                serialize, deserialize = template_serializer_and_deserializer(metatable, t)
-            elseif not deserialize then
-                serialize = default_serialize
-                deserialize = default_deserialize(metatable)
-            else
-                serialize = metatable
+            local key_count = 0
+            for k in pairs(x) do
+                if not_array_index(k, xlen) then
+                    key_count = key_count + 1
+                end
+            end
+            accum[#accum + 1] = number_to_str(key_count)
+            for k, v in pairs(x) do
+                if not_array_index(k, xlen) then
+                    types[type(k)](k, visited, accum)
+                    types[type(v)](v, visited, accum)
+                end
             end
         end
-    elseif type(metatable) == "string" then
-        name = name or metatable
     end
-    type_check(name, "string", "name")
-    type_check(serialize, "function", "serialize")
-    type_check(deserialize, "function", "deserialize")
-    assert(not ids[metatable], "Metatable already registered.")
-    assert(not mts[name], ("Name %q already registered."):format(name))
-    mts[name] = metatable
-    ids[metatable] = name
-    serializers[name] = serialize
-    deserializers[name] = deserialize
-    return metatable
-end
-
-local function unregister(item)
-    local name, metatable
-    if type(item) == "string" then -- assume name
-        name, metatable = item, mts[item]
-    else -- assume metatable
-        name, metatable = ids[item], item
+    
+    types["function"] = function(x, visited, accum)
+        if visited[x] then
+            accum[#accum + 1] = "\208"
+            accum[#accum + 1] = number_to_str(visited[x])
+        else
+            if check_custom_type(x, visited, accum) then return end
+            visited[x] = visited[NEXT]
+            visited[NEXT] =  visited[NEXT] + 1
+            local str = dump(x)
+            accum[#accum + 1] = "\210"
+            accum[#accum + 1] = number_to_str(#str)
+            accum[#accum + 1] = str
+        end
     end
-    type_check(name, "string", "name")
-    mts[name] = nil
-    ids[metatable] = nil
-    serializers[name] = nil
-    deserializers[name] = nil
-    return metatable
-end
-
-local function registerClass(class, name)
-    name = name or class.name
-    if class.__instanceDict then -- middleclass
-        register(class.__instanceDict, name)
-    else -- assume 30log or similar library
-        register(class, name)
+    
+    types.cdata = function(x, visited, accum)
+        if visited[x] then
+            accum[#accum + 1] = "\208"
+            accum[#accum + 1] = number_to_str(visited[x])
+        else
+            if check_custom_type(x, visited, #accum) then return end
+            error("Cannot serialize this cdata.")
+        end
     end
-    return class
+    
+    types.thread = function() error("Cannot serialize threads.") end
+    
+    local function deserialize_value(str, index, visited)
+        local t = byte(str, index)
+        if not t then return end
+        if t < 128 then
+            return t - 27, index + 1
+        elseif t < 192 then
+            return byte(str, index + 1) + 0x100 * (t - 128) - 8192, index + 2
+        elseif t == 202 then
+            return nil, index + 1
+        elseif t == 203 then
+            return number_from_str(str, index)
+        elseif t == 204 then
+            return true, index + 1
+        elseif t == 205 then
+            return false, index + 1
+        elseif t == 206 then
+            local length, dataindex = deserialize_value(str, index + 1, visited)
+            local nextindex = dataindex + length
+            local substr = sub(str, dataindex, nextindex - 1)
+            visited[#visited + 1] = substr
+            return substr, nextindex
+        elseif t == 207 then
+            local count, nextindex = number_from_str(str, index + 1)
+            local ret = {}
+            visited[#visited + 1] = ret
+            for i = 1, count do
+                ret[i], nextindex = deserialize_value(str, nextindex, visited)
+            end
+            count, nextindex = number_from_str(str, nextindex)
+            for i = 1, count do
+                local k, v
+                k, nextindex = deserialize_value(str, nextindex, visited)
+                v, nextindex = deserialize_value(str, nextindex, visited)
+                ret[k] = v
+            end
+            return ret, nextindex
+        elseif t == 208 then
+            local ref, nextindex = number_from_str(str, index + 1)
+            return visited[ref], nextindex
+        elseif t == 209 then
+            local count
+            local name, nextindex = deserialize_value(str, index + 1, visited)
+            count, nextindex = number_from_str(str, nextindex)
+            local args = {}
+            for i = 1, count do
+                args[i], nextindex = deserialize_value(str, nextindex, visited)
+            end
+            local ret = deserializers[name](unpack(args))
+            visited[#visited + 1] = ret
+            return ret, nextindex
+        elseif t == 210 then
+            local length, dataindex = deserialize_value(str, index + 1, visited)
+            local nextindex = dataindex + length
+            local ret = loadstring(sub(str, dataindex, nextindex - 1))
+            visited[#visited + 1] = ret
+            return ret, nextindex
+        elseif t == 211 then
+            local res, nextindex = deserialize_value(str, index + 1, visited)
+            return resources_by_name[res], nextindex
+        elseif t == 212 then
+            return number_from_str(str, index)
+        else
+            error("Could not deserialize type byte " .. t .. ".")
+        end
+    end
+    
+    local function serialize(...)
+        local visited = {[NEXT] = 1, [CTORSTACK] = {}}
+        local accum = {}
+        for i = 1, select("#", ...) do
+            local x = select(i, ...)
+            types[type(x)](x, visited, accum)
+        end
+        return concat(accum)
+    end
+    
+    local function make_file_writer(file)
+        return setmetatable({}, {
+            __newindex = function(_, _, v)
+                file:write(v)
+            end
+        })
+    end
+    
+    local function serialize_to_file(path, mode, ...)
+        local file, err = io.open(path, mode)
+        assert(file, err)
+        local visited = {[NEXT] = 1, [CTORSTACK] = {}}
+        local accum = make_file_writer(file)
+        for i = 1, select("#", ...) do
+            local x = select(i, ...)
+            types[type(x)](x, visited, accum)
+        end
+        -- flush the writer
+        file:flush()
+        file:close()
+    end
+    
+    local function writeFile(path, ...)
+        return serialize_to_file(path, "wb", ...)
+    end
+    
+    local function appendFile(path, ...)
+        return serialize_to_file(path, "ab", ...)
+    end
+    
+    local function deserialize(str, index)
+        assert(type(str) == "string", "Expected string to deserialize.")
+        local vals = {}
+        index = index or 1
+        local visited = {}
+        local len = 0
+        local val
+        while index do
+            val, index = deserialize_value(str, index, visited)
+            if index then
+                len = len + 1
+                vals[len] = val
+            end
+        end
+        return vals, len
+    end
+    
+    local function deserializeN(str, n, index)
+        assert(type(str) == "string", "Expected string to deserialize.")
+        n = n or 1
+        assert(type(n) == "number", "Expected a number for parameter n.")
+        assert(n > 0 and floor(n) == n, "N must be a poitive integer.")
+        local vals = {}
+        index = index or 1
+        local visited = {}
+        local len = 0
+        local val
+        while index and len < n do
+            val, index = deserialize_value(str, index, visited)
+            if index then
+                len = len + 1
+                vals[len] = val
+            end
+        end
+        vals[len + 1] = index
+        return unpack(vals, 1, n + 1)
+    end
+    
+    local function readFile(path)
+        local file, err = io.open(path, "rb")
+        assert(file, err)
+        local str = file:read("*all")
+        file:close()
+        return deserialize(str)
+    end
+    
+    local function default_deserialize(metatable)
+        return function(...)
+            local ret = {}
+            for i = 1, select("#", ...), 2 do
+                ret[select(i, ...)] = select(i + 1, ...)
+            end
+            return setmetatable(ret, metatable)
+        end
+    end
+    
+    local function default_serialize(x)
+        assert(type(x) == "table",
+            "Default serialization for custom types only works for tables.")
+        local args = {}
+        local len = 0
+        for k, v in pairs(x) do
+            args[len + 1], args[len + 2] = k, v
+            len = len + 2
+        end
+        return unpack(args, 1, len)
+    end
+    
+    -- Templating
+    
+    local function normalize_template(template)
+        local ret = {}
+        for i = 1, #template do
+            ret[i] = template[i]
+        end
+        local non_array_part = {}
+        -- The non-array part of the template (nested templates) have to be deterministic, so they are sorted.
+        -- This means that inherently non deterministicly sortable keys (tables, functions) should NOT be used
+        -- in templates. Looking for way around this.
+        for k in pairs(template) do
+            if not_array_index(k, #template) then
+                non_array_part[#non_array_part + 1] = k
+            end
+        end
+        table.sort(non_array_part)
+        for i = 1, #non_array_part do
+            local name = non_array_part[i]
+            ret[#ret + 1] = {name, normalize_template(template[name])}
+        end
+        return ret
+    end
+    
+    local function templatepart_serialize(part, argaccum, x, len)
+        local extras = {}
+        local extracount = 0
+        for k, v in pairs(x) do
+            extras[k] = v
+            extracount = extracount + 1
+        end
+        for i = 1, #part do
+            extracount = extracount - 1
+            if type(part[i]) == "table" then
+                extras[part[i][1]] = nil
+                len = templatepart_serialize(part[i][2], argaccum, x[part[i][1]], len)
+            else
+                extras[part[i]] = nil
+                len = len + 1
+                argaccum[len] = x[part[i]]
+            end
+        end
+        if extracount > 0 then
+            argaccum[len + 1] = extras
+        else
+            argaccum[len + 1] = nil
+        end
+        return len + 1
+    end
+    
+    local function templatepart_deserialize(ret, part, values, vindex)
+        for i = 1, #part do
+            local name = part[i]
+            if type(name) == "table" then
+                local newret = {}
+                ret[name[1]] = newret
+                vindex = templatepart_deserialize(newret, name[2], values, vindex)
+            else
+                ret[name] = values[vindex]
+                vindex = vindex + 1
+            end
+        end
+        local extras = values[vindex]
+        if extras then
+            for k, v in pairs(extras) do
+                ret[k] = v
+            end
+        end
+        return vindex + 1
+    end
+    
+    local function template_serializer_and_deserializer(metatable, template)
+        return function(x)
+            local argaccum = {}
+            local len = templatepart_serialize(template, argaccum, x, 0)
+            return unpack(argaccum, 1, len)
+        end, function(...)
+            local ret = {}
+            local len = select("#", ...)
+            local args = {...}
+            templatepart_deserialize(ret, template, args, 1)
+            return setmetatable(ret, metatable)
+        end
+    end
+    
+    local function register(metatable, name, serialize, deserialize)
+        if type(metatable) == "table" then
+            name = name or metatable.name
+            serialize = serialize or metatable._serialize
+            deserialize = deserialize or metatable._deserialize
+            if not serialize then
+                if metatable._template then
+                    local t = normalize_template(metatable._template)
+                    serialize, deserialize = template_serializer_and_deserializer(metatable, t)
+                elseif not deserialize then
+                    serialize = default_serialize
+                    deserialize = default_deserialize(metatable)
+                else
+                    serialize = metatable
+                end
+            end
+        elseif type(metatable) == "string" then
+            name = name or metatable
+        end
+        type_check(name, "string", "name")
+        type_check(serialize, "function", "serialize")
+        type_check(deserialize, "function", "deserialize")
+        assert(not ids[metatable], "Metatable already registered.")
+        assert(not mts[name], ("Name %q already registered."):format(name))
+        mts[name] = metatable
+        ids[metatable] = name
+        serializers[name] = serialize
+        deserializers[name] = deserialize
+        return metatable
+    end
+    
+    local function unregister(item)
+        local name, metatable
+        if type(item) == "string" then -- assume name
+            name, metatable = item, mts[item]
+        else -- assume metatable
+            name, metatable = ids[item], item
+        end
+        type_check(name, "string", "name")
+        mts[name] = nil
+        ids[metatable] = nil
+        serializers[name] = nil
+        deserializers[name] = nil
+        return metatable
+    end
+    
+    local function registerClass(class, name)
+        name = name or class.name
+        if class.__instanceDict then -- middleclass
+            register(class.__instanceDict, name)
+        else -- assume 30log or similar library
+            register(class, name)
+        end
+        return class
+    end
+    
+    local function registerResource(resource, name)
+        type_check(name, "string", "name")
+        assert(not resources[resource],
+            "Resource already registered.")
+        assert(not resources_by_name[name],
+            format("Resource %q already exists.", name))
+        resources_by_name[name] = resource
+        resources[resource] = name
+        return resource
+    end
+    
+    local function unregisterResource(name)
+        type_check(name, "string", "name")
+        assert(resources_by_name[name], format("Resource %q does not exist.", name))
+        local resource = resources_by_name[name]
+        resources_by_name[name] = nil
+        resources[resource] = nil
+        return resource
+    end
+    
+    return {
+        -- aliases
+        s = serialize,
+        d = deserialize,
+        dn = deserializeN,
+        r = readFile,
+        w = writeFile,
+        a = appendFile,
+    
+        serialize = serialize,
+        deserialize = deserialize,
+        deserializeN = deserializeN,
+        readFile = readFile,
+        writeFile = writeFile,
+        appendFile = appendFile,
+        register = register,
+        unregister = unregister,
+        registerResource = registerResource,
+        unregisterResource = unregisterResource,
+        registerClass = registerClass,
+        
+        newbinser = newbinser
+    }
 end
 
-local function registerResource(resource, name)
-    type_check(name, "string", "name")
-    assert(not resources[resource],
-        "Resource already registered.")
-    assert(not resources_by_name[name],
-        format("Resource %q already exists.", name))
-    resources_by_name[name] = resource
-    resources[resource] = name
-    return resource
-end
-
-local function unregisterResource(name)
-    type_check(name, "string", "name")
-    assert(resources_by_name[name], format("Resource %q does not exist.", name))
-    local resource = resources_by_name[name]
-    resources_by_name[name] = nil
-    resources[resource] = nil
-    return resource
-end
-
-return {
-    -- aliases
-    s = serialize,
-    d = deserialize,
-    dn = deserializeN,
-    r = readFile,
-    w = writeFile,
-    a = appendFile,
-
-    serialize = serialize,
-    deserialize = deserialize,
-    deserializeN = deserializeN,
-    readFile = readFile,
-    writeFile = writeFile,
-    appendFile = appendFile,
-    register = register,
-    unregister = unregister,
-    registerResource = registerResource,
-    unregisterResource = unregisterResource,
-    registerClass = registerClass
-}
+return newbinser()
