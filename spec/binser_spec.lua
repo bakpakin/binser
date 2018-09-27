@@ -348,8 +348,12 @@ describe("binser", function()
                 return { a = data, tested = i }
             end
             binsers[i].register(mt, "MyCoolType", custser, custdser)
-            finally(function() binsers[i].unregister("MyCoolType") end)
         end
+        finally(function() 
+            for i = 1, #binsers do
+                binsers[i].unregister("MyCoolType") 
+            end
+        end)
         local src = setmetatable({ a = "x" }, mt)
         for i = 1, #binsers do
             local serialized_data = binsers[i].s(src)
