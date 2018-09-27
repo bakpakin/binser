@@ -585,7 +585,7 @@ end
 
 local function template_serializer_and_deserializer(metatable, template)
     return function(x)
-        argaccum = {}
+        local argaccum = {}
         local len = templatepart_serialize(template, argaccum, x, 0)
         return unpack(argaccum, 1, len)
     end, function(...)
