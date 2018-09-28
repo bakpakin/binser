@@ -413,7 +413,9 @@ describe("binser", function()
             "Could not deserialize type byte",
             "Expected more bytes of input",
             "Got nil resource name",
-            "Expected table metatable"
+            "Expected table metatable",
+            "Expected more bytes of string",
+            "No resources found for name"
         }
         local function test(...)
             local ok, err = pcall(binser.d, string.char(...))
@@ -428,7 +430,7 @@ describe("binser", function()
                 end
             end
 
-            error("Bad error: ", err, ...)
+            error(("Bad error: %s (%q)"):format(err, string.char(...)))
         end
 
         test()
@@ -436,6 +438,13 @@ describe("binser", function()
         for c = 0, 255 do
             test(c)
         end
+
+        for c = 0, 255 do
+            for d = 0, 255 do
+                test(c, d)
+            end
+        end
+
     end)
 
 end)
