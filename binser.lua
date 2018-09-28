@@ -27,7 +27,6 @@ local select = select
 local pairs = pairs
 local getmetatable = getmetatable
 local setmetatable = setmetatable
-local tonumber = tonumber
 local type = type
 local loadstring = loadstring or load
 local concat = table.concat
@@ -150,9 +149,15 @@ local function number_from_str(str, index)
     if b < 128 then
         return b - 27, index + 1
     elseif b < 192 then
-        return byte(str, index + 1) + 0x100 * (b - 128) - 8192, index + 2
+        local b2 = byte(str, index + 1)
+        if not b2 then error("Expected more bytes of input") end
+        return b2 + 0x100 * (b - 128) - 8192, index + 2
     end
     local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
+    if (not b1) or (not b2) or (not b3) or (not b4) or
+        (not b5) or (not b6) or (not b7) or (not b8) then
+        error("Expected more bytes of input")
+    end
     if b == 212 then
         local flip = b1 >= 128
         if flip then -- negative
@@ -165,6 +170,9 @@ local function number_from_str(str, index)
         else
             return n, index + 9
         end
+    end
+    if b ~= 203 then
+        error("Expected number")
     end
     local sign = b1 > 0x7F and -1 or 1
     local e = (b1 % 0x80) * 0x10 + floor(b2 / 0x10)
@@ -190,11 +198,11 @@ end
 
 
 local function newbinser()
-    
+
     -- unique table key for getting next value
     local NEXT = {}
     local CTORSTACK = {}
-    
+
     -- NIL = 202
     -- FLOAT = 203
     -- TRUE = 204
@@ -206,7 +214,8 @@ local function newbinser()
     -- FUNCTION = 210
     -- RESOURCE = 211
     -- INT64 = 212
-    
+    -- TABLE WITH META = 213
+
     local mts = {}
     local ids = {}
     local serializers = {}
@@ -214,19 +223,19 @@ local function newbinser()
     local resources = {}
     local resources_by_name = {}
     local types = {}
-    
+
     types["nil"] = function(x, visited, accum)
         accum[#accum + 1] = "\202"
     end
-    
+
     function types.number(x, visited, accum)
         accum[#accum + 1] = number_to_str(x)
     end
-    
+
     function types.boolean(x, visited, accum)
         accum[#accum + 1] = x and "\204" or "\205"
     end
-    
+
     function types.string(x, visited, accum)
         local alen = #accum
         if visited[x] then
@@ -240,7 +249,7 @@ local function newbinser()
             accum[alen + 3] = x
         end
     end
-    
+
     local function check_custom_type(x, visited, accum)
         local res = resources[x]
         if res then
@@ -271,7 +280,7 @@ local function newbinser()
             return true
         end
     end
-    
+
     function types.userdata(x, visited, accum)
         if visited[x] then
             accum[#accum + 1] = "\208"
@@ -281,7 +290,7 @@ local function newbinser()
             error("Cannot serialize this userdata.")
         end
     end
-    
+
     function types.table(x, visited, accum)
         if visited[x] then
             accum[#accum + 1] = "\208"
@@ -291,7 +300,13 @@ local function newbinser()
             visited[x] = visited[NEXT]
             visited[NEXT] =  visited[NEXT] + 1
             local xlen = #x
-            accum[#accum + 1] = "\207"
+            local mt = getmetatable(x)
+            if mt then
+                accum[#accum + 1] = "\213"
+                types.table(mt, visited, accum)
+            else
+                accum[#accum + 1] = "\207"
+            end
             accum[#accum + 1] = number_to_str(xlen)
             for i = 1, xlen do
                 local v = x[i]
@@ -312,7 +327,7 @@ local function newbinser()
             end
         end
     end
-    
+
     types["function"] = function(x, visited, accum)
         if visited[x] then
             accum[#accum + 1] = "\208"
@@ -327,7 +342,7 @@ local function newbinser()
             accum[#accum + 1] = str
         end
     end
-    
+
     types.cdata = function(x, visited, accum)
         if visited[x] then
             accum[#accum + 1] = "\208"
@@ -337,34 +352,42 @@ local function newbinser()
             error("Cannot serialize this cdata.")
         end
     end
-    
+
     types.thread = function() error("Cannot serialize threads.") end
-    
+
     local function deserialize_value(str, index, visited)
         local t = byte(str, index)
         if not t then return end
         if t < 128 then
             return t - 27, index + 1
         elseif t < 192 then
-            return byte(str, index + 1) + 0x100 * (t - 128) - 8192, index + 2
+            local b2 = byte(str, index + 1)
+            if not b2 then error("Expected more bytes of input.") end
+            return b2 + 0x100 * (t - 128) - 8192, index + 2
         elseif t == 202 then
             return nil, index + 1
-        elseif t == 203 then
+        elseif t == 203 or t == 212 then
             return number_from_str(str, index)
         elseif t == 204 then
             return true, index + 1
         elseif t == 205 then
             return false, index + 1
         elseif t == 206 then
-            local length, dataindex = deserialize_value(str, index + 1, visited)
+            local length, dataindex = number_from_str(str, index + 1)
             local nextindex = dataindex + length
             local substr = sub(str, dataindex, nextindex - 1)
             visited[#visited + 1] = substr
             return substr, nextindex
-        elseif t == 207 then
-            local count, nextindex = number_from_str(str, index + 1)
+        elseif t == 207 or t == 213 then
+            local mt
             local ret = {}
             visited[#visited + 1] = ret
+            nextindex = index + 1
+            if t == 213 then
+                mt, nextindex = deserialize_value(str, nextindex, visited)
+                if type(mt) ~= "table" then error("Expected table metatable") end
+            end
+            local count, nextindex = number_from_str(str, nextindex)
             for i = 1, count do
                 ret[i], nextindex = deserialize_value(str, nextindex, visited)
             end
@@ -373,8 +396,10 @@ local function newbinser()
                 local k, v
                 k, nextindex = deserialize_value(str, nextindex, visited)
                 v, nextindex = deserialize_value(str, nextindex, visited)
+                if k == nil then error("Can't have nil table keys") end
                 ret[k] = v
             end
+            if mt then setmetatable(ret, mt) end
             return ret, nextindex
         elseif t == 208 then
             local ref, nextindex = number_from_str(str, index + 1)
@@ -387,25 +412,31 @@ local function newbinser()
             for i = 1, count do
                 args[i], nextindex = deserialize_value(str, nextindex, visited)
             end
+            if not name or not deserializers[name] then
+                error(("Cannot deserialize class '%s'"):format(tostring(name)))
+            end
             local ret = deserializers[name](unpack(args))
             visited[#visited + 1] = ret
             return ret, nextindex
         elseif t == 210 then
-            local length, dataindex = deserialize_value(str, index + 1, visited)
+            local length, dataindex = number_from_str(str, index + 1)
             local nextindex = dataindex + length
             local ret = loadstring(sub(str, dataindex, nextindex - 1))
             visited[#visited + 1] = ret
             return ret, nextindex
         elseif t == 211 then
-            local res, nextindex = deserialize_value(str, index + 1, visited)
-            return resources_by_name[res], nextindex
-        elseif t == 212 then
-            return number_from_str(str, index)
+            local resname, nextindex = deserialize_value(str, index + 1, visited)
+            if resname == nil then error("Got nil resource name") end
+            local res = resources_by_name[resname]
+            if res == nil then
+                error(("No resources found for name '%s'"):format(tostring(resname)))
+            end
+            return res, nextindex
         else
             error("Could not deserialize type byte " .. t .. ".")
         end
     end
-    
+
     local function serialize(...)
         local visited = {[NEXT] = 1, [CTORSTACK] = {}}
         local accum = {}
@@ -415,7 +446,7 @@ local function newbinser()
         end
         return concat(accum)
     end
-    
+
     local function make_file_writer(file)
         return setmetatable({}, {
             __newindex = function(_, _, v)
@@ -423,7 +454,7 @@ local function newbinser()
             end
         })
     end
-    
+
     local function serialize_to_file(path, mode, ...)
         local file, err = io.open(path, mode)
         assert(file, err)
@@ -437,15 +468,15 @@ local function newbinser()
         file:flush()
         file:close()
     end
-    
+
     local function writeFile(path, ...)
         return serialize_to_file(path, "wb", ...)
     end
-    
+
     local function appendFile(path, ...)
         return serialize_to_file(path, "ab", ...)
     end
-    
+
     local function deserialize(str, index)
         assert(type(str) == "string", "Expected string to deserialize.")
         local vals = {}
@@ -462,7 +493,7 @@ local function newbinser()
         end
         return vals, len
     end
-    
+
     local function deserializeN(str, n, index)
         assert(type(str) == "string", "Expected string to deserialize.")
         n = n or 1
@@ -483,7 +514,7 @@ local function newbinser()
         vals[len + 1] = index
         return unpack(vals, 1, n + 1)
     end
-    
+
     local function readFile(path)
         local file, err = io.open(path, "rb")
         assert(file, err)
@@ -491,31 +522,31 @@ local function newbinser()
         file:close()
         return deserialize(str)
     end
-    
-    local function default_deserialize(metatable)
-        return function(...)
-            local ret = {}
-            for i = 1, select("#", ...), 2 do
-                ret[select(i, ...)] = select(i + 1, ...)
-            end
-            return setmetatable(ret, metatable)
-        end
+
+    -- Resources
+
+    local function registerResource(resource, name)
+        type_check(name, "string", "name")
+        assert(not resources[resource],
+            "Resource already registered.")
+        assert(not resources_by_name[name],
+            format("Resource %q already exists.", name))
+        resources_by_name[name] = resource
+        resources[resource] = name
+        return resource
     end
-    
-    local function default_serialize(x)
-        assert(type(x) == "table",
-            "Default serialization for custom types only works for tables.")
-        local args = {}
-        local len = 0
-        for k, v in pairs(x) do
-            args[len + 1], args[len + 2] = k, v
-            len = len + 2
-        end
-        return unpack(args, 1, len)
+
+    local function unregisterResource(name)
+        type_check(name, "string", "name")
+        assert(resources_by_name[name], format("Resource %q does not exist.", name))
+        local resource = resources_by_name[name]
+        resources_by_name[name] = nil
+        resources[resource] = nil
+        return resource
     end
-    
+
     -- Templating
-    
+
     local function normalize_template(template)
         local ret = {}
         for i = 1, #template do
@@ -537,7 +568,7 @@ local function newbinser()
         end
         return ret
     end
-    
+
     local function templatepart_serialize(part, argaccum, x, len)
         local extras = {}
         local extracount = 0
@@ -563,7 +594,7 @@ local function newbinser()
         end
         return len + 1
     end
-    
+
     local function templatepart_deserialize(ret, part, values, vindex)
         for i = 1, #part do
             local name = part[i]
@@ -584,7 +615,7 @@ local function newbinser()
         end
         return vindex + 1
     end
-    
+
     local function template_serializer_and_deserializer(metatable, template)
         return function(x)
             local argaccum = {}
@@ -598,21 +629,25 @@ local function newbinser()
             return setmetatable(ret, metatable)
         end
     end
-    
+
+    -- Used to serialize classes withh custom serializers and deserializers.
+    -- If no _serialize or _deserialize (or no _template) value is found in the
+    -- metatable, then the metatable is registered as a resources.
     local function register(metatable, name, serialize, deserialize)
         if type(metatable) == "table" then
             name = name or metatable.name
             serialize = serialize or metatable._serialize
             deserialize = deserialize or metatable._deserialize
-            if not serialize then
+            if (not serialize) or (not deserialize) then
                 if metatable._template then
+                    -- Register as template
                     local t = normalize_template(metatable._template)
                     serialize, deserialize = template_serializer_and_deserializer(metatable, t)
-                elseif not deserialize then
-                    serialize = default_serialize
-                    deserialize = default_deserialize(metatable)
                 else
-                    serialize = metatable
+                    -- Register the metatable as a resource. This is semantically
+                    -- similar and more flexible (handles cycles).
+                    registerResource(metatable, name)
+                    return
                 end
             end
         elseif type(metatable) == "string" then
@@ -621,15 +656,17 @@ local function newbinser()
         type_check(name, "string", "name")
         type_check(serialize, "function", "serialize")
         type_check(deserialize, "function", "deserialize")
-        assert(not ids[metatable], "Metatable already registered.")
-        assert(not mts[name], ("Name %q already registered."):format(name))
+        assert((not ids[metatable]) and (not resources[metatable]),
+            "Metatable already registered.")
+        assert((not mts[name]) and (not resources_by_name[name]),
+            ("Name %q already registered."):format(name))
         mts[name] = metatable
         ids[metatable] = name
         serializers[name] = serialize
         deserializers[name] = deserialize
         return metatable
     end
-    
+
     local function unregister(item)
         local name, metatable
         if type(item) == "string" then -- assume name
@@ -639,12 +676,16 @@ local function newbinser()
         end
         type_check(name, "string", "name")
         mts[name] = nil
-        ids[metatable] = nil
+        if (metatable) then
+            resources[metatable] = nil
+            ids[metatable] = nil
+        end
         serializers[name] = nil
         deserializers[name] = nil
+        resources_by_name[name] = nil;
         return metatable
     end
-    
+
     local function registerClass(class, name)
         name = name or class.name
         if class.__instanceDict then -- middleclass
@@ -654,27 +695,7 @@ local function newbinser()
         end
         return class
     end
-    
-    local function registerResource(resource, name)
-        type_check(name, "string", "name")
-        assert(not resources[resource],
-            "Resource already registered.")
-        assert(not resources_by_name[name],
-            format("Resource %q already exists.", name))
-        resources_by_name[name] = resource
-        resources[resource] = name
-        return resource
-    end
-    
-    local function unregisterResource(name)
-        type_check(name, "string", "name")
-        assert(resources_by_name[name], format("Resource %q does not exist.", name))
-        local resource = resources_by_name[name]
-        resources_by_name[name] = nil
-        resources[resource] = nil
-        return resource
-    end
-    
+
     return {
         -- aliases
         s = serialize,
@@ -683,7 +704,7 @@ local function newbinser()
         r = readFile,
         w = writeFile,
         a = appendFile,
-    
+
         serialize = serialize,
         deserialize = deserialize,
         deserializeN = deserializeN,
@@ -695,7 +716,7 @@ local function newbinser()
         registerResource = registerResource,
         unregisterResource = unregisterResource,
         registerClass = registerClass,
-        
+
         newbinser = newbinser
     }
 end

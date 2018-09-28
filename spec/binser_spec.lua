@@ -334,9 +334,9 @@ describe("binser", function()
             test_ser(-10000, math.mininteger, math.mininteger + 201)
         end)
     end
-    
+
     it("Use independent binsers", function()
-        local binsers = { binser, binser.newbinser(), 
+        local binsers = { binser, binser.newbinser(),
                                   binser.newbinser() }
         local mt = {}
         for i = 1, #binsers do
@@ -349,9 +349,9 @@ describe("binser", function()
             end
             binsers[i].register(mt, "MyCoolType", custser, custdser)
         end
-        finally(function() 
+        finally(function()
             for i = 1, #binsers do
-                binsers[i].unregister("MyCoolType") 
+                binsers[i].unregister("MyCoolType")
             end
         end)
         local src = setmetatable({ a = "x" }, mt)
@@ -362,6 +362,31 @@ describe("binser", function()
             src.tested = i
             assert.are.same(src, results[1])
         end
+    end)
+
+    it("Can properly serialize classes with no built in serializers.", function()
+        local b = binser.newbinser()
+        local name = "aclass"
+        local mt = {
+            -- Class knows nothing about binser
+            classname = "SomeClass"
+        }
+        b.registerClass(mt, name)
+        local data = setmetatable({
+            key1 = "hello",
+            key2 = "world"
+        }, mt)
+        local out = b.serialize(data)
+        local results, len = b.deserialize(out)
+        assert.are.equal(len, 1)
+        assert.are.same(data, results[1])
+        assert.are.equal(getmetatable(data), getmetatable(results[1]))
+    end)
+
+    it("Can catch some bad input on deserializing", function()
+        local ok, msg = pcall(binser.deserialize, "\128")
+        assert(not ok, "expected deserialization error")
+        assert(msg:match("Expected more bytes of input"))
     end)
 
 end)
