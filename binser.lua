@@ -146,17 +146,18 @@ end
 -- number deserialization code also modified from https://github.com/fperrad/lua-MessagePack
 local function number_from_str(str, index)
     local b = byte(str, index)
+    if not b then error("Expected more bytes of input.") end
     if b < 128 then
         return b - 27, index + 1
     elseif b < 192 then
         local b2 = byte(str, index + 1)
-        if not b2 then error("Expected more bytes of input") end
+        if not b2 then error("Expected more bytes of input.") end
         return b2 + 0x100 * (b - 128) - 8192, index + 2
     end
     local b1, b2, b3, b4, b5, b6, b7, b8 = byte(str, index + 1, index + 8)
     if (not b1) or (not b2) or (not b3) or (not b4) or
         (not b5) or (not b6) or (not b7) or (not b8) then
-        error("Expected more bytes of input")
+        error("Expected more bytes of input.")
     end
     if b == 212 then
         local flip = b1 >= 128
@@ -164,7 +165,8 @@ local function number_from_str(str, index)
             b1, b2, b3, b4 = 0xFF - b1, 0xFF - b2, 0xFF - b3, 0xFF - b4
             b5, b6, b7, b8 = 0xFF - b5, 0xFF - b6, 0xFF - b7, 0xFF - b8
         end
-        local n = ((((((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
+        local n = ((((((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4) *
+            0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
         if flip then
             return (-n) - 1, index + 9
         else
@@ -357,7 +359,7 @@ local function newbinser()
 
     local function deserialize_value(str, index, visited)
         local t = byte(str, index)
-        if not t then return end
+        if not t then return nil, index end
         if t < 128 then
             return t - 27, index + 1
         elseif t < 192 then
@@ -375,11 +377,12 @@ local function newbinser()
         elseif t == 206 then
             local length, dataindex = number_from_str(str, index + 1)
             local nextindex = dataindex + length
+            if not byte(str, nextindex - 1) then error("Expected more bytes of string") end
             local substr = sub(str, dataindex, nextindex - 1)
             visited[#visited + 1] = substr
             return substr, nextindex
         elseif t == 207 or t == 213 then
-            local mt
+            local mt, count, nextindex
             local ret = {}
             visited[#visited + 1] = ret
             nextindex = index + 1
@@ -387,7 +390,7 @@ local function newbinser()
                 mt, nextindex = deserialize_value(str, nextindex, visited)
                 if type(mt) ~= "table" then error("Expected table metatable") end
             end
-            local count, nextindex = number_from_str(str, nextindex)
+            count, nextindex = number_from_str(str, nextindex)
             for i = 1, count do
                 ret[i], nextindex = deserialize_value(str, nextindex, visited)
             end
@@ -484,11 +487,15 @@ local function newbinser()
         local visited = {}
         local len = 0
         local val
-        while index do
-            val, index = deserialize_value(str, index, visited)
-            if index then
+        while true do
+            local nextindex
+            val, nextindex = deserialize_value(str, index, visited)
+            if nextindex > index then
                 len = len + 1
                 vals[len] = val
+                index = nextindex
+            else
+                break
             end
         end
         return vals, len
@@ -504,11 +511,15 @@ local function newbinser()
         local visited = {}
         local len = 0
         local val
-        while index and len < n do
-            val, index = deserialize_value(str, index, visited)
-            if index then
+        while len < n do
+            local nextindex
+            val, nextindex = deserialize_value(str, index, visited)
+            if nextindex > index then
                 len = len + 1
                 vals[len] = val
+                index = nextindex
+            else
+                break
             end
         end
         vals[len + 1] = index
@@ -577,14 +588,18 @@ local function newbinser()
             extracount = extracount + 1
         end
         for i = 1, #part do
-            extracount = extracount - 1
+            local name
             if type(part[i]) == "table" then
-                extras[part[i][1]] = nil
-                len = templatepart_serialize(part[i][2], argaccum, x[part[i][1]], len)
+                name = part[i][1]
+                len = templatepart_serialize(part[i][2], argaccum, x[name], len)
             else
-                extras[part[i]] = nil
+                name = part[i]
                 len = len + 1
                 argaccum[len] = x[part[i]]
+            end
+            if extras[name] ~= nil then
+                extracount = extracount - 1
+                extras[name] = nil
             end
         end
         if extracount > 0 then
@@ -623,7 +638,6 @@ local function newbinser()
             return unpack(argaccum, 1, len)
         end, function(...)
             local ret = {}
-            local len = select("#", ...)
             local args = {...}
             templatepart_deserialize(ret, template, args, 1)
             return setmetatable(ret, metatable)

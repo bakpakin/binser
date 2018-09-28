@@ -287,6 +287,24 @@ describe("binser", function()
         binser.unregister(mt)
     end)
 
+    it("Can use templates with with nil values", function()
+        local mt = {
+            name = "marshalledtype",
+            _template = {
+                "cat", "dog", 0, false
+            }
+        }
+        local a = setmetatable({
+            cat = "meow",
+            [0] = "something",
+            [false] = 1,
+            notintemplate = "woops."
+        }, mt)
+        binser.register(mt)
+        test_ser(a)
+        binser.unregister(mt)
+    end)
+
     it("Can serialize nested registered objects", function()
         local mt1 = {
             name = "MyCoolType1",
@@ -387,6 +405,37 @@ describe("binser", function()
         local ok, msg = pcall(binser.deserialize, "\128")
         assert(not ok, "expected deserialization error")
         assert(msg:match("Expected more bytes of input"))
+    end)
+
+    it("Can handle all single byte values", function()
+        local error_patterns = {
+            "Expected more bytes of input",
+            "Could not deserialize type byte",
+            "Expected more bytes of input",
+            "Got nil resource name",
+            "Expected table metatable"
+        }
+        local function test(...)
+            local ok, err = pcall(binser.d, string.char(...))
+
+            if ok then
+                return
+            end
+
+            for _, error_pattern in ipairs(error_patterns) do
+                if err:find(error_pattern) then
+                    return
+                end
+            end
+
+            error("Bad error: ", err, ...)
+        end
+
+        test()
+
+        for c = 0, 255 do
+            test(c)
+        end
     end)
 
 end)
