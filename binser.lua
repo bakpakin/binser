@@ -377,7 +377,8 @@ local function newbinser()
         elseif t == 206 then
             local length, dataindex = number_from_str(str, index + 1)
             local nextindex = dataindex + length
-            if not byte(str, nextindex - 1) then error("Expected more bytes of string") end
+            if not (length >= 0) then error("Bad string length") end
+            if #str < nextindex - 1 then error("Expected more bytes of string") end
             local substr = sub(str, dataindex, nextindex - 1)
             visited[#visited + 1] = substr
             return substr, nextindex
@@ -392,13 +393,19 @@ local function newbinser()
             end
             count, nextindex = number_from_str(str, nextindex)
             for i = 1, count do
+                local oldindex = nextindex
                 ret[i], nextindex = deserialize_value(str, nextindex, visited)
+                if nextindex == oldindex then error("Expected more bytes of input.") end
             end
             count, nextindex = number_from_str(str, nextindex)
             for i = 1, count do
                 local k, v
+                local oldindex = nextindex
                 k, nextindex = deserialize_value(str, nextindex, visited)
+                if nextindex == oldindex then error("Expected more bytes of input.") end
+                oldindex = nextindex
                 v, nextindex = deserialize_value(str, nextindex, visited)
+                if nextindex == oldindex then error("Expected more bytes of input.") end
                 if k == nil then error("Can't have nil table keys") end
                 ret[k] = v
             end
@@ -413,7 +420,9 @@ local function newbinser()
             count, nextindex = number_from_str(str, nextindex)
             local args = {}
             for i = 1, count do
+                local oldindex = nextindex
                 args[i], nextindex = deserialize_value(str, nextindex, visited)
+                if nextindex == oldindex then error("Expected more bytes of input.") end
             end
             if not name or not deserializers[name] then
                 error(("Cannot deserialize class '%s'"):format(tostring(name)))
@@ -424,6 +433,8 @@ local function newbinser()
         elseif t == 210 then
             local length, dataindex = number_from_str(str, index + 1)
             local nextindex = dataindex + length
+            if not (length >= 0) then error("Bad string length") end
+            if #str < nextindex - 1 then error("Expected more bytes of string") end
             local ret = loadstring(sub(str, dataindex, nextindex - 1))
             visited[#visited + 1] = ret
             return ret, nextindex

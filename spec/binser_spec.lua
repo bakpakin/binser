@@ -407,44 +407,49 @@ describe("binser", function()
         assert(msg:match("Expected more bytes of input"))
     end)
 
-    it("Can handle all single byte values", function()
-        local error_patterns = {
-            "Expected more bytes of input",
-            "Could not deserialize type byte",
-            "Expected more bytes of input",
-            "Got nil resource name",
-            "Expected table metatable",
-            "Expected more bytes of string",
-            "No resources found for name"
-        }
-        local function test(...)
-            local ok, err = pcall(binser.d, string.char(...))
-
-            if ok then
+    local error_patterns = {
+        "Bad string length",
+        "Expected more bytes of input",
+        "Could not deserialize type byte",
+        "Expected more bytes of input",
+        "Got nil resource name",
+        "Expected table metatable",
+        "Expected more bytes of string",
+        "No resources found for name"
+    }
+    local function fuzzcase(str)
+        local ok, err = pcall(binser.d, str)
+        if ok then return end
+        for _, error_pattern in ipairs(error_patterns) do
+            if err:find(error_pattern) then
                 return
             end
-
-            for _, error_pattern in ipairs(error_patterns) do
-                if err:find(error_pattern) then
-                    return
-                end
-            end
-
-            error(("Bad error: %s (%q)"):format(err, string.char(...)))
         end
+        error(("Bad error: %s (%q)"):format(err, str))
+    end
 
-        test()
+    it("Can handle all 0, 1, and 2 byte strings for deserialization", function()
+
+        fuzzcase('')
 
         for c = 0, 255 do
-            test(c)
+            fuzzcase(string.char(c))
         end
 
         for c = 0, 255 do
             for d = 0, 255 do
-                test(c, d)
+                fuzzcase(string.char(c, d))
             end
         end
 
+    end)
+
+    it("Can fail gracefully on some chosen bad data for deserialization", function()
+        fuzzcase("\118\98\209\206\23")
+        fuzzcase("\206\203\126\5\176\72\30\208\109\253")
+        fuzzcase("\207\203\119\126\143\161\199\174\109\197")
+        fuzzcase("\3\207\54\206\23")
+        fuzzcase("\207\140\149\188\132\1\210\19\227\172")
     end)
 
 end)
