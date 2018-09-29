@@ -415,7 +415,9 @@ describe("binser", function()
         "Got nil resource name",
         "Expected table metatable",
         "Expected more bytes of string",
-        "No resources found for name"
+        "No resources found for name",
+        "Cannot deserialize class",
+        "Expected number"
     }
     local function fuzzcase(str)
         local ok, err = pcall(binser.d, str)
@@ -425,7 +427,8 @@ describe("binser", function()
                 return
             end
         end
-        error(("Bad error: %s (%q)"):format(err, str))
+        error(("Bad error: %s (str='%s')"):format(err, str:gsub('.',
+            function(x) return '\\' .. string.byte(x) end)))
     end
 
     it("Can handle all 0 and 1 byte strings for deserialization", function()
@@ -449,6 +452,18 @@ describe("binser", function()
         fuzzcase("\207\203\119\126\143\161\199\174\109\197")
         fuzzcase("\3\207\54\206\23")
         fuzzcase("\207\140\149\188\132\1\210\19\227\172")
+    end)
+
+    it("Can fail gracefully on random test data", function()
+        math.randomseed(123456789)
+        local unpack = unpack or table.unpack
+        for _ = 1, 40000 do
+            local bytes = {}
+            for i = 1, math.random(1, 10) do
+                bytes[i] = math.random(0, 255)
+            end
+            fuzzcase(string.char(unpack(bytes)))
+        end
     end)
 
 end)
