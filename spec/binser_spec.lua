@@ -428,20 +428,19 @@ describe("binser", function()
         error(("Bad error: %s (%q)"):format(err, str))
     end
 
-    it("Can handle all 0, 1, and 2 byte strings for deserialization", function()
-
+    it("Can handle all 0 and 1 byte strings for deserialization", function()
         fuzzcase('')
-
         for c = 0, 255 do
             fuzzcase(string.char(c))
         end
+    end)
 
+    it("Can handle all 2 byte strings for deserialization", function()
         for c = 0, 255 do
             for d = 0, 255 do
                 fuzzcase(string.char(c, d))
             end
         end
-
     end)
 
     it("Can fail gracefully on some chosen bad data for deserialization", function()
