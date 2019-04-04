@@ -1,7 +1,7 @@
 -- binser.lua
 
 --[[
-Copyright (c) 2016 Calvin Rose
+Copyright (c) 2016-2019 Calvin Rose
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -722,6 +722,7 @@ local function newbinser()
     end
 
     return {
+        VERSION = "0.0-8",
         -- aliases
         s = serialize,
         d = deserialize,
