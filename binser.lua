@@ -123,6 +123,8 @@ local function number_to_str(n)
         else
             return char(203, 0xFF, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
         end
+    elseif m == 0.0 and e == 0 then
+        return char(0xCB, sign, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
     end
     e = e + 0x3FE
     if e < 1 then -- denormalized numbers
