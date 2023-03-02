@@ -38,6 +38,7 @@ local dump = string.dump
 local floor = math.floor
 local frexp = math.frexp
 local unpack = unpack or table.unpack
+local huge = math.huge
 
 -- Lua 5.3 frexp polyfill
 -- From https://github.com/excessive/cpml/blob/master/modules/utils.lua
@@ -117,12 +118,14 @@ local function number_to_str(n)
     local m, e = frexp(n) -- mantissa, exponent
     if m ~= m then
         return char(203, 0xFF, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
-    elseif m == 1/0 then
+    elseif m == huge then
         if sign == 0 then
             return char(203, 0x7F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
         else
             return char(203, 0xFF, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
         end
+    elseif m == 0.0 and e == 0 then
+        return char(0xCB, sign, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
     end
     e = e + 0x3FE
     if e < 1 then -- denormalized numbers
@@ -188,9 +191,9 @@ local function number_from_str(str, index)
         end
     elseif e == 0x7FF then
         if m == 0 then
-            n = sign * (1/0)
+            n = sign * huge
         else
-            n = 0.0/0.0
+            n = 0
         end
     else
         n = sign * (1.0 + m / 2 ^ 52) * 2 ^ (e - 0x3FF)
